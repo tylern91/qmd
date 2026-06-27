@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [2.6.4] - 2026-06-27
+
+### Changed
+
+- Improved `CLAUDE.md` with codebase architecture map, build/test details, and corrected `bin/qmd` launcher description.
+
 ## [2.6.3] - 2026-06-24
 
 ### Added
