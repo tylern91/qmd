@@ -315,6 +315,14 @@ function parseHfUri(model: string): HfRef | null {
   if (parts.length < 3) return null;
   const repo = parts.slice(0, 2).join("/");
   const file = parts.slice(2).join("/");
+
+  // Reject path traversal segments in the file component.
+  // A crafted hf: URI like "hf:org/repo/../../../etc/passwd" would otherwise
+  // be passed directly to the download URL and cached path construction.
+  if (file.split("/").some(segment => segment === ".." || segment === ".")) {
+    return null;
+  }
+
   return { repo, file };
 }
 

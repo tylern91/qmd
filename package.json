@@ -57,7 +57,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
-    "better-sqlite3": "12.10.0",
+    "better-sqlite3": "12.11.1",
     "fast-glob": "3.3.3",
     "node-llama-cpp": "3.18.1",
     "picomatch": "4.0.4",
@@ -66,7 +66,7 @@
     "tree-sitter-python": "0.25.0",
     "tree-sitter-rust": "0.24.0",
     "tree-sitter-typescript": "0.23.2",
-    "web-tree-sitter": "0.26.8",
+    "web-tree-sitter": "0.26.9",
     "yaml": "2.9.0",
     "zod": "4.2.1"
   },
@@ -79,10 +79,21 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "7.6.13",
-    "tsx": "4.21.0",
-    "vitest": "3.2.4"
+    "tsx": "4.22.4",
+    "vitest": "4.1.9"
   },
   "pnpm": {
+    "overrides": {
+      "simple-git": "3.36.0",
+      "hono": "4.12.27",
+      "fast-uri": "4.0.0",
+      "vite": "7.3.5",
+      "esbuild": "0.28.1",
+      "postcss": "8.5.15",
+      "ip-address": "10.2.0",
+      "qs": "6.15.3",
+      "tar": "7.5.17"
+    },
     "onlyBuiltDependencies": [
       "better-sqlite3",
       "esbuild",
@@ -95,7 +106,7 @@
     ]
   },
   "peerDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.0"
   },
   "engines": {
     "node": ">=22.0.0"

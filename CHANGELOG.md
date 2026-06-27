@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Security
+
+- **CVE remediation — 26 → 0 known vulnerabilities**: added `pnpm.overrides` to pin vulnerable transitive dependencies to patched versions. Covers:
+  - `simple-git` 3.36.0 (was 3.33.0, CVSS 9.8 RCE via `--config ext::` clone source, CVE-2026-6951) — via `node-llama-cpp`
+  - `hono` 4.12.27 (was 4.12.12, 14 advisories: CORS wildcard credentials, path traversal, cookie injection, etc.) — via `@modelcontextprotocol/sdk`
+  - `fast-uri` 4.0.0 (was 3.1.0, two HIGH: path traversal + host confusion, CVE-2026-6321/6322) — via `@modelcontextprotocol/sdk` → `ajv`
+  - `vite` 7.3.5, `esbuild` 0.28.1, `postcss` 8.5.15, `qs` 6.15.3, `ip-address` 10.2.0, `tar` 7.5.17 (moderate dev/tooling advisories)
+- **MCP HTTP server — DNS-rebinding protection**: all requests except `GET /health` now validate the `Origin` header against an allowlist of loopback addresses; cross-origin browser requests are rejected with `403 Forbidden`.
+- **MCP HTTP server — optional bearer token auth**: set `QMD_MCP_TOKEN` or pass `--token` to `qmd mcp --http` to require `Authorization: Bearer <token>` on all endpoints except `/health`. The daemon subprocess inherits the token via its environment, not the command line.
+- **MCP HTTP server — network-exposure warning**: when `--host` / `QMD_HOST` is a non-loopback address and no token is configured, a loud startup warning is printed.
+- **Update hooks — project-local config trust warning**: when `qmd update` runs an `update` command from a project-local `.qmd/index.yaml` (discovered by walking upward from CWD), a warning is printed showing the config path. Guards against config-poisoning attacks from untrusted directory trees.
+- **`resolveVirtualPath` — path traversal guard**: virtual paths (e.g. `qmd://col/../../etc/passwd`) now reject `..` segments before resolution, and the resolved path is confirmed to remain inside the collection root.
+- **`parseHfUri` — hf: file path validation**: path traversal segments (`..` / `.`) in the `file` component of `hf:` model URIs are rejected, preventing crafted configs from redirecting model-download cache paths.
+
+### Added
+
+- **`--token` flag for `qmd mcp --http`**: enables bearer token authentication for the MCP HTTP server. Token is propagated to daemon subprocesses via the environment (not visible in `ps`).
+
+### Changed
+
+- **Node 26 support**: Node 26.4.0 is now CI-tested and officially supported. All native modules (`better-sqlite3`, `node-llama-cpp`, `sqlite-vec`, tree-sitter grammars) load correctly on Node 26 via N-API / prebuild ABI. CI matrix updated from `[22, 23]` to `[22, 24, 26]`.
+- **TypeScript 6.0.3**: upgraded from TypeScript 5.9.3 to TypeScript 6.0.3. Added required `rootDir: "src"` to `tsconfig.build.json` (TS6 stricter source-root inference, TS5011).
+- **vitest 4.1.9**: upgraded from vitest 3.2.4 to vitest 4.1.9 (clears the CRITICAL advisory on the vitest 3.x UI server).
+- **Dependency bumps**: `better-sqlite3` 12.11.1, `tsx` 4.22.4, `web-tree-sitter` 0.26.9. (`zod` stays at 4.2.1 — 4.4.x changes the main export to a "classic" compatibility layer that is no longer structurally assignable to `$ZodType` from `zod/v4/core`, breaking type compatibility with `@modelcontextprotocol/sdk`.)
+
 ## [2.6.4] - 2026-06-27
 
 ### Changed
