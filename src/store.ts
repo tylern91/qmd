@@ -674,6 +674,7 @@ export function isVirtualPath(path: string): boolean {
 
 /**
  * Resolve a virtual path to absolute filesystem path.
+ * Returns null if the path escapes the collection root (traversal guard).
  */
 export function resolveVirtualPath(db: Database, virtualPath: string): string | null {
   const parsed = parseVirtualPath(virtualPath);
@@ -682,7 +683,17 @@ export function resolveVirtualPath(db: Database, virtualPath: string): string | 
   const coll = getCollectionByName(db, parsed.collectionName);
   if (!coll) return null;
 
-  return resolve(coll.pwd, parsed.path);
+  // Reject any path segment that contains directory traversal sequences.
+  // The path comes from user input (qmd:// URIs), so we validate before resolving.
+  if (parsed.path.includes("..")) return null;
+
+  const resolved = resolve(coll.pwd, parsed.path);
+
+  // Confirm the resolved path stays inside the collection root.
+  const root = coll.pwd.endsWith("/") ? coll.pwd : coll.pwd + "/";
+  if (resolved !== coll.pwd && !resolved.startsWith(root)) return null;
+
+  return resolved;
 }
 
 /**

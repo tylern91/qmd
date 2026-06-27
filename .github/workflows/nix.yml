@@ -2,21 +2,32 @@ name: Nix
 
 on:
   push:
-    branches: [main]
+    branches: [release]
   pull_request:
-    branches: [main]
+    branches: [release]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-flake:
     name: Build flake (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
 
       - uses: cachix/install-nix-action@v31
         with:

@@ -503,7 +503,7 @@ The `query` command uses **Reciprocal Rank Fusion (RRF)** with position-aware bl
 
 ### System Requirements
 
-- **Node.js** >= 22
+- **Node.js** >= 22 (Node 22, 24, and 26 are CI-tested)
 - **Bun** >= 1.0.0
 - **macOS**: Homebrew SQLite (for extension support)
   ```sh

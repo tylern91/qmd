@@ -124,6 +124,9 @@ import {
 let store: ReturnType<typeof createStore> | null = null;
 let storeDbPathOverride: string | undefined;
 let currentIndexName = "index";
+// Set to the project-local config path when qmd auto-discovers a .qmd/index.yaml
+// above CWD. Used to warn before running that config's update hooks.
+let activeLocalConfigPath: string | undefined;
 
 function getStore(): ReturnType<typeof createStore> {
   if (!store) {
@@ -682,6 +685,15 @@ async function updateCollections(): Promise<void> {
     // Execute custom update command if specified in YAML
     const yamlCol = getCollectionFromYaml(col.name);
     if (yamlCol?.update) {
+      // Security: warn when the update command originates from a project-local
+      // .qmd/index.yaml that was discovered by walking upward from CWD. An
+      // untrusted directory tree (e.g. a cloned repo) could contain a crafted
+      // .qmd/index.yaml with a malicious update command. The global config
+      // (~/.config/qmd) is implicitly trusted because only the user writes it.
+      if (activeLocalConfigPath) {
+        console.log(`${c.yellow}⚠ Running update command from project-local config: ${activeLocalConfigPath}${c.reset}`);
+        console.log(`${c.yellow}  If you did not write this config, press Ctrl-C now.${c.reset}`);
+      }
       console.log(`${c.dim}    Running update command: ${yamlCol.update}${c.reset}`);
       try {
         const proc = nodeSpawn("bash", ["-c", yamlCol.update], {
@@ -2772,6 +2784,7 @@ function parseCLI() {
       daemon: { type: "boolean" },
       port: { type: "string" },
       host: { type: "string" },
+      token: { type: "string" },  // Bearer token for MCP HTTP auth (also: QMD_MCP_TOKEN env var)
     },
     allowPositionals: true,
     strict: false, // Allow unknown options to pass through
@@ -2793,6 +2806,7 @@ function parseCLI() {
     if (localConfigPath) {
       setConfigSource({ configPath: localConfigPath });
       storeDbPathOverride = getLocalDbPath(localConfigPath);
+      activeLocalConfigPath = localConfigPath;
       closeDb();
     } else {
       setConfigSource();
@@ -4424,6 +4438,8 @@ if (isMain) {
         // fallback (resolved in startMcpHttpServer). Use "0.0.0.0" to accept
         // off-host connections, e.g. a container liveness probe.
         const host = cli.values.host ? String(cli.values.host) : undefined;
+        // --token (or QMD_MCP_TOKEN env var) enables Bearer auth for the HTTP server.
+        const token = cli.values.token ? String(cli.values.token) : undefined;
 
         if (cli.values.daemon) {
           // Guard: check if already running
@@ -4444,12 +4460,18 @@ if (isMain) {
           const selfPath = fileURLToPath(import.meta.url);
           const indexArgs = cli.values.index ? ["--index", String(cli.values.index)] : [];
           const hostArgs = host ? ["--host", host] : [];
+          // Propagate token via env var so the daemon subprocess inherits it
+          // without exposing it on the process command-line (visible in `ps`).
+          const daemonEnv = token
+            ? { ...process.env, QMD_MCP_TOKEN: token }
+            : process.env;
           const spawnArgs = selfPath.endsWith(".ts")
             ? ["--import", pathJoin(dirname(selfPath), "..", "..", "node_modules", "tsx", "dist", "esm", "index.mjs"), selfPath, ...indexArgs, "mcp", "--http", "--port", String(port), ...hostArgs]
             : [selfPath, ...indexArgs, "mcp", "--http", "--port", String(port), ...hostArgs];
           const child = nodeSpawn(process.execPath, spawnArgs, {
             stdio: ["ignore", logFd, logFd],
             detached: true,
+            env: daemonEnv,
           });
           child.unref();
           closeSync(logFd); // parent's copy; child inherited the fd
@@ -4466,7 +4488,7 @@ if (isMain) {
         process.removeAllListeners("SIGINT");
         const { startMcpHttpServer } = await import("../mcp/server.js");
         try {
-          await startMcpHttpServer(port, { dbPath: getDbPath(), host });
+          await startMcpHttpServer(port, { dbPath: getDbPath(), host, token });
         } catch (e: unknown) {
           if (typeof e === "object" && e !== null && "code" in e && e.code === "EADDRINUSE") {
             console.error(`Port ${port} already in use. Try a different port with --port.`);

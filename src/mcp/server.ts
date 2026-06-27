@@ -608,20 +608,62 @@ export type HttpServerHandle = {
   stop: () => Promise<void>;
 };
 
+// =============================================================================
+// HTTP security helpers
+// =============================================================================
+
+/** Hosts that are considered loopback and safe to serve without network auth. */
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1"]);
+
+function isLoopbackHost(host: string): boolean {
+  return LOOPBACK_HOSTS.has(host.split(":")[0] ?? host);
+}
+
+/**
+ * Validate the Origin or Host header to prevent DNS-rebinding attacks.
+ * Allows requests with no Origin (e.g. curl, native MCP clients) and requests
+ * whose origin is a loopback address. Rejects cross-origin requests from
+ * non-loopback origins.
+ */
+function isAllowedOrigin(origin: string | undefined, serverPort: number): boolean {
+  if (!origin) return true; // non-browser clients (curl, MCP clients)
+
+  try {
+    const { hostname, port } = new URL(origin);
+    if (!isLoopbackHost(hostname)) return false;
+    // Port must match the server's port when present
+    if (port && Number(port) !== serverPort) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Start MCP server over Streamable HTTP (JSON responses, no SSE).
  * Binds to `options.host` (default "localhost", overridable via the QMD_HOST
  * env var) — set "0.0.0.0" to accept connections from other hosts, e.g. a
  * container liveness probe. Returns a handle for shutdown and port discovery.
+ *
+ * Security options:
+ * - Set QMD_MCP_TOKEN (or pass `token`) to require Bearer auth on all endpoints
+ *   except /health. Strongly recommended when binding to a non-loopback host.
+ * - When binding to a non-loopback host without a token, a loud warning is
+ *   printed — the server still starts to support container probes, but you
+ *   should add a token or restrict network access at the firewall level.
  */
 export async function startMcpHttpServer(
   port: number,
-  options: ({ quiet?: boolean; host?: string } & McpStartupOptions) = {},
+  options: ({ quiet?: boolean; host?: string; token?: string } & McpStartupOptions) = {},
 ): Promise<HttpServerHandle> {
   // See startMcpServer() for the rationale — flip production mode here so the
   // HTTP transport resolves the real database path, without leaking state into
   // callers that only import this module for its exports (e.g. tests).
   enableProductionMode();
+
+  // Resolve the bearer token from options or environment variable.
+  const authToken: string | undefined = options.token ?? process.env.QMD_MCP_TOKEN;
+
   const configPath = getConfigPath();
   const store = await createStore({
     dbPath: options.dbPath ?? getDefaultDbPath(),
@@ -710,12 +752,35 @@ export async function startMcpHttpServer(
     const pathname = nodeReq.url || "/";
 
     try {
+      // /health is always open — no auth or origin check — for liveness probes.
       if (pathname === "/health" && nodeReq.method === "GET") {
         const body = JSON.stringify({ status: "ok", uptime: Math.floor((Date.now() - startTime) / 1000) });
         nodeRes.writeHead(200, { "Content-Type": "application/json" });
         nodeRes.end(body);
         log(`${ts()} GET /health (${Date.now() - reqStart}ms)`);
         return;
+      }
+
+      // DNS-rebinding protection: reject cross-origin browser requests.
+      // Non-browser clients (curl, MCP clients) send no Origin and are allowed.
+      const origin = nodeReq.headers["origin"];
+      if (origin !== undefined && !isAllowedOrigin(origin, port)) {
+        nodeRes.writeHead(403, { "Content-Type": "application/json" });
+        nodeRes.end(JSON.stringify({ error: "Forbidden: cross-origin request rejected" }));
+        return;
+      }
+
+      // Bearer token auth — enforced when QMD_MCP_TOKEN / --token is set.
+      if (authToken) {
+        const authorization = nodeReq.headers["authorization"];
+        if (authorization !== `Bearer ${authToken}`) {
+          nodeRes.writeHead(401, {
+            "Content-Type": "application/json",
+            "WWW-Authenticate": 'Bearer realm="qmd"',
+          });
+          nodeRes.end(JSON.stringify({ error: "Unauthorized: valid Bearer token required" }));
+          return;
+        }
       }
 
       // REST endpoint: POST /search — structured search without MCP protocol
@@ -869,6 +934,18 @@ export async function startMcpHttpServer(
   });
 
   const host = options.host ?? process.env.QMD_HOST ?? "localhost";
+
+  // Warn when binding to a non-loopback address without a token.
+  // The server still starts (e.g. for container health probes) but any request
+  // other than GET /health is exposed to the network without authentication.
+  if (!isLoopbackHost(host) && !authToken) {
+    console.error(
+      "WARNING: qmd MCP server is bound to a non-loopback host without a bearer token.\n" +
+      "         All endpoints except /health are accessible to anyone on the network.\n" +
+      "         Set QMD_MCP_TOKEN or pass --token to require authentication.",
+    );
+  }
+
   await new Promise<void>((resolve, reject) => {
     httpServer.on("error", reject);
     httpServer.listen(port, host, () => resolve());
