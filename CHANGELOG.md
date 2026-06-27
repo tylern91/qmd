@@ -20,6 +20,16 @@
 
 - **`--token` flag for `qmd mcp --http`**: enables bearer token authentication for the MCP HTTP server. Token is propagated to daemon subprocesses via the environment (not visible in `ps`).
 
+### CI
+
+- **Fix workflow triggers**: all CI workflows now trigger on `push`/`pull_request` against `release` (the default branch); previously triggered on `main`, so CI never ran on any PR.
+- **Least-privilege permissions**: added `permissions: contents: read` to `ci.yml` and `nix.yml`.
+- **Concurrency**: added `cancel-in-progress: true` to `ci.yml` and `nix.yml` — superseded workflow runs are cancelled automatically on new pushes.
+- **Job timeouts**: all jobs now have `timeout-minutes: 30` to prevent runaway hangs.
+- **Action upgrades** (uniform across all workflows): `actions/checkout@v4` → `@v7`, `actions/setup-node@v4` → `@v6`; pin `oven-sh/setup-bun@v2` to `bun-version: "1.3.14"`.
+- **Shallow clone**: `persist-credentials: false` + `fetch-depth: 1` on all non-publishing checkout steps.
+- **Typecheck + build gate**: new `typecheck-build` job in `ci.yml` runs `npm run test:types` + `npm run build` on Node 26 (Ubuntu) — catches TypeScript and bundler errors before they reach a PR merge.
+
 ### Changed
 
 - **Node 26 support**: Node 26.4.0 is now CI-tested and officially supported. All native modules (`better-sqlite3`, `node-llama-cpp`, `sqlite-vec`, tree-sitter grammars) load correctly on Node 26 via N-API / prebuild ABI. CI matrix updated from `[22, 23]` to `[22, 24, 26]`.
