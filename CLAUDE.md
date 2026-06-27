@@ -1,6 +1,10 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # QMD - Query Markup Documents
 
-Use Bun instead of Node.js (`bun` not `node`, `bun install` not `npm install`).
+Use Bun for local development (`bun install`, not `npm install`). The codebase is dual-runtime: it runs on Node.js (>=22) and Bun, and CI tests both. The installed `bin/qmd` launcher prefers Node in dist mode for native-module ABI safety.
 
 ## Commands
 
@@ -136,17 +140,33 @@ qmd multi-get "#abc123, #def456"
 ## Development
 
 ```sh
-bun src/cli/qmd.ts <command>   # Run from source
-bun link               # Install globally as 'qmd'
+bun run qmd <command>          # Run CLI from source (tsx under the hood)
+bun src/cli/qmd.ts <command>   # Equivalent direct form
+bun link                       # Install globally as 'qmd' for local testing
+
+npm run build                  # node scripts/build.mjs → tsc to dist/ + shebang inject
+npm run test:types             # Type-check only (tsc --noEmit)
 ```
+
+There is **no ESLint / Prettier / Biome and no lint/format script**. TypeScript type-checking (`strict`, `noUncheckedIndexedAccess`) is the only static-quality gate.
 
 ## Tests
 
-All tests live in `test/`. Run everything:
+Tests live in `test/` and run under **two runtimes** against the same suite — both must pass. Vitest runs under Node and ignores the preload; `bun test` requires `--preload ./src/test-preload.ts`. Tests execute serially (`fileParallelism: false`) because they share a SQLite index.
 
 ```sh
+npm test                                             # Full suite: typecheck + Vitest(Node) + Bun + smoke
+npm run test:node                                    # Vitest under Node only
+npm run test:bun                                     # Bun runner only
+
+# Run everything directly:
 npx vitest run --reporter=verbose test/
 bun test --preload ./src/test-preload.ts test/
+
+# Run a single file or single test by name:
+npx vitest run test/cli.test.ts
+npx vitest run test/cli.test.ts -t "name substring"
+bun test --preload ./src/test-preload.ts test/cli.test.ts
 ```
 
 ## Architecture
@@ -158,6 +178,20 @@ bun test --preload ./src/test-preload.ts test/
 - Smart chunking: 900 tokens/chunk with 15% overlap, prefers markdown headings as boundaries
 - AST-aware chunking: use `--chunk-strategy auto` to chunk code files (.ts/.js/.py/.go/.rs) at function/class/import boundaries via tree-sitter. Default is `regex` (existing behavior). Markdown and unknown file types always use regex chunking.
 
+### Codebase layout
+
+The codebase is deliberately flat and framework-light — most logic lives in a few large top-level files in `src/`. Navigate by grep / symbol, not full reads.
+
+- `src/store.ts` (~5400 lines) — core engine: chunking, FTS5 + vector search, RRF fusion, query expansion, reranking, document/collection CRUD, and the SQLite schema (migrations gated on `PRAGMA user_version`). The search orchestrator is `hybridQuery()`; `vectorSearchQuery()` backs `vsearch`.
+- `src/llm.ts` (~2000 lines) — all node-llama-cpp integration: model resolution/download (cache at `~/.cache/qmd/models`), embeddings, reranking, query-expansion generation, GPU mode resolution (`QMD_FORCE_CPU` / `--no-gpu` forces CPU).
+- `src/db.ts` — cross-runtime SQLite layer (bun:sqlite vs better-sqlite3), WAL + busy-timeout setup, `loadSqliteVec()`. Vector features degrade gracefully: BM25 still works if sqlite-vec is unavailable.
+- `src/collections.ts` — `.qmd/index.yaml` config file management, collections, contexts.
+- `src/cli/qmd.ts` — CLI entry; no CLI framework, uses Node's `util.parseArgs` and a single `switch` on the first positional. `src/cli/formatter.ts` handles output formats (cli/json/csv/md/xml/files).
+- `src/mcp/server.ts` — MCP server (`@modelcontextprotocol/sdk`), stdio + Streamable-HTTP transports.
+- `src/ast.ts` — tree-sitter AST chunking for code files. `src/index.ts` — public library API.
+
+**Query flow** (`hybridQuery` in `store.ts`): BM25 probe (a strong single top result short-circuits LLM expansion) → query expansion (lex/vec/hyde variants) → FTS5 for lexical expansions + batched vector search for vec/hyde → Reciprocal Rank Fusion → cross-encoder rerank (skip with `--no-rerank`).
+
 ## Important: Do NOT run automatically
 
 - Never run `qmd collection add`, `qmd embed`, or `qmd update` automatically
@@ -167,9 +201,9 @@ bun test --preload ./src/test-preload.ts test/
 
 ## Do NOT compile
 
-- Never run `bun build --compile` - it overwrites the shell wrapper and breaks sqlite-vec
-- The `qmd` file is a shell script that runs compiled JS from `dist/` - do not replace it
-- `npm run build` compiles TypeScript to `dist/` via `tsc -p tsconfig.build.json`
+- Never run `bun build --compile` — it overwrites the `bin/qmd` launcher and breaks sqlite-vec (native modules cannot be bundled into a single compiled binary).
+- `bin/qmd` is a **Node.js launcher** (the `bin` entry in `package.json`), not a shell script. It picks a runtime and runs `dist/cli/qmd.js` (or `src/` in a git checkout). Do not replace it.
+- `npm run build` runs `node scripts/build.mjs`, which compiles TypeScript to `dist/` via `tsc -p tsconfig.build.json` and injects the `#!/usr/bin/env node` shebang.
 
 ## Releasing
 
