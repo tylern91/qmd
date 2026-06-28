@@ -1,5 +1,8 @@
 use anyhow::Context as _;
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use rmcp::{
     handler::server::wrapper::Parameters,
@@ -57,7 +60,7 @@ impl QmdServer {
     }
 }
 
-fn make_config(index_dir: &PathBuf) -> StoreConfig {
+fn make_config(index_dir: &Path) -> StoreConfig {
     StoreConfig {
         db_path: index_dir.join("index.sqlite"),
         tantivy_dir: index_dir.join("tantivy"),
@@ -368,7 +371,7 @@ fn multi_get_documents(
     }
 }
 
-fn build_status(store: &Store, index_dir: &PathBuf) -> String {
+fn build_status(store: &Store, index_dir: &Path) -> String {
     let total_docs: i64 = store
         .db
         .query_row("SELECT COUNT(*) FROM documents WHERE active=1", [], |r| {

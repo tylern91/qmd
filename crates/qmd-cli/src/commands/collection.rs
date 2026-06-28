@@ -125,10 +125,7 @@ fn list(index_dir: &Path) -> Result<()> {
         println!("No collections. Run `qmd collection add <path> --name <name>` to add one.");
         return Ok(());
     }
-    println!(
-        "{:<30}  {:<8}  {:<12}  {}",
-        "NAME", "DOCS", "INCLUDED", "PATH"
-    );
+    println!("{:<30}  {:<8}  {:<12}  PATH", "NAME", "DOCS", "INCLUDED");
     println!("{}", "─".repeat(80));
     for col in &cols {
         let count = db::list_documents(&s.db, Some(&col.name))?.len();

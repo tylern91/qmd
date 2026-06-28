@@ -262,6 +262,7 @@ pub fn has_vector(conn: &Connection, hash: &str, seq: i64, fingerprint: &str) ->
 
 /// Insert or update a chunk's vector metadata.
 /// `vid` is the usearch key (caller assigns it from the HNSW index).
+#[allow(clippy::too_many_arguments)]
 pub fn upsert_vector_meta(
     conn: &Connection,
     hash: &str,
