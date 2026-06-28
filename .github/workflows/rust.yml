@@ -59,8 +59,8 @@ jobs:
 
       - name: Pin cmake to 3.x (cmake 4.x breaks llama.cpp CMakeLists.txt)
         run: |
-          brew install cmake@3 || true
-          echo "$(brew --prefix cmake@3)/bin" >> "$GITHUB_PATH"
+          pip install "cmake<4" --quiet
+          cmake --version
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
@@ -146,8 +146,8 @@ jobs:
 
       - name: Pin cmake to 3.x (cmake 4.x breaks llama.cpp CMakeLists.txt)
         run: |
-          brew install cmake@3 || true
-          echo "$(brew --prefix cmake@3)/bin" >> "$GITHUB_PATH"
+          pip install "cmake<4" --quiet
+          cmake --version
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
