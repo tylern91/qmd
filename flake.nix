@@ -1,5 +1,5 @@
 {
-  description = "QMD - Quick Markdown Search";
+  description = "QMD - on-device hybrid document search (single static binary)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -7,164 +7,45 @@
   };
 
   outputs = { self, nixpkgs, flake-utils }:
-    {
-      homeModules.default = { config, lib, pkgs, ... }:
-        with lib;
-        let
-          cfg = config.programs.qmd;
-        in
-        {
-          options.programs.qmd = {
-            enable = mkEnableOption "QMD - on-device search engine for markdown notes";
-
-            package = mkOption {
-              type = types.package;
-              default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
-              defaultText = literalExpression "inputs.qmd.packages.\${pkgs.stdenv.hostPlatform.system}.default";
-              description = "The qmd package to use.";
-            };
-          };
-
-          config = mkIf cfg.enable {
-            home.packages = [ cfg.package ];
-          };
-        };
-    } //
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        packageJson = builtins.fromJSON (builtins.readFile ./package.json);
-        version = packageJson.version;
 
-        # SQLite with loadable extension support for sqlite-vec
-        sqliteWithExtensions = pkgs.sqlite.overrideAttrs (old: {
-          configureFlags = (old.configureFlags or []) ++ [
-            "--enable-load-extension"
-          ];
-        });
+        # Native build inputs needed to compile qmd (llama-cpp-2 uses CMake + C/C++).
+        # NOTE: Metal/Foundation/Accelerate frameworks are found automatically by the
+        # compiler toolchain on macOS outside the Nix sandbox. A full sandboxed
+        # rustPlatform.buildRustPackage derivation is a follow-up: llama-cpp-2 bundles
+        # CMake + C++ code that has complex sandbox requirements. Track in CHANGELOG.
+        nativeBuildDeps = [
+          pkgs.rustc
+          pkgs.cargo
+          pkgs.rustfmt
+          pkgs.clippy
+          # cmake 3.x — llama.cpp CMakeLists.txt requires VERSION 3.14..3.28
+          pkgs.cmake
+          pkgs.pkg-config
+        ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+          pkgs.gcc
+        ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
+          pkgs.darwin.cctools
+        ];
 
-        nodeModulesHashes = {
-          x86_64-linux = "sha256-GrpH57N65wUpwX83yy3pAM0lhC9LZBXWtc7JAoE22hQ=";
-          aarch64-darwin = "sha256-P1Iff26b+jJpoOfCXr6FBoQMYDrJanMzTVxmUSJosiI=";
-
-          # Populate these on first build for additional hosts if/when needed.
-          aarch64-linux = pkgs.lib.fakeHash;
-          x86_64-darwin = pkgs.lib.fakeHash;
-        };
-
-        nodeModules = pkgs.stdenvNoCC.mkDerivation {
-          pname = "qmd-node-modules";
-          inherit version;
-
-          src = ./.;
-
-          impureEnvVars = pkgs.lib.fetchers.proxyImpureEnvVars ++ [
-            "GIT_PROXY_COMMAND"
-            "SOCKS_SERVER"
-          ];
-
-          nativeBuildInputs = [
-            pkgs.bun
-          ];
-
-          dontConfigure = true;
-
-          buildPhase = ''
-            export HOME=$(mktemp -d)
-
-            bun install \
-              --backend copyfile \
-              --frozen-lockfile \
-              --ignore-scripts \
-              --no-progress \
-              --production
-          '';
-
-          installPhase = ''
-            mkdir -p $out
-            cp -R node_modules $out/
-          '';
-
-          dontFixup = true;
-
-          outputHash = nodeModulesHashes.${system};
-          outputHashAlgo = "sha256";
-          outputHashMode = "recursive";
-        };
-
-        qmd = pkgs.stdenv.mkDerivation {
-          pname = "qmd";
-          inherit version;
-
-          src = ./.;
-
-          nativeBuildInputs = [
-            pkgs.bun
-            pkgs.makeWrapper
-            pkgs.nodejs
-            pkgs.node-gyp
-            pkgs.python3  # needed by node-gyp to compile better-sqlite3
-          ] ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
-            pkgs.darwin.cctools  # provides libtool needed by node-gyp on macOS
-          ];
-
-          buildInputs = [ pkgs.sqlite ];
-
-          buildPhase = ''
-            export HOME=$(mktemp -d)
-
-            cp -R ${nodeModules}/node_modules ./
-            chmod -R u+w node_modules
-
-            (cd node_modules/better-sqlite3 && node-gyp rebuild --release)
-          '';
-
-          installPhase = ''
-            mkdir -p $out/lib/qmd
-            mkdir -p $out/bin
-
-            cp -r node_modules $out/lib/qmd/
-            cp -r src $out/lib/qmd/
-            cp package.json $out/lib/qmd/
-
-            makeWrapper ${pkgs.bun}/bin/bun $out/bin/qmd \
-              --add-flags "$out/lib/qmd/src/cli/qmd.ts" \
-              --set DYLD_LIBRARY_PATH "${pkgs.sqlite.out}/lib" \
-              --set LD_LIBRARY_PATH "${pkgs.sqlite.out}/lib"
-          '';
-
-          meta = with pkgs.lib; {
-            description = "On-device search engine for markdown notes, meeting transcripts, and knowledge bases";
-            homepage = "https://github.com/tobi/qmd";
-            license = licenses.mit;
-            platforms = platforms.unix;
-          };
-        };
       in
       {
-        packages = {
-          default = qmd;
-          qmd = qmd;
-        };
-
-        apps.default = {
-          type = "app";
-          program = "${qmd}/bin/qmd";
-        };
-
+        # Development shell: full Rust toolchain + native deps for building qmd.
+        # On macOS, Metal/Foundation/Accelerate are automatically available via xcrun
+        # without listing them explicitly (needed for sandboxed builds only).
+        # Usage: nix develop
         devShells.default = pkgs.mkShell {
-          buildInputs = [
-            pkgs.bun
-            sqliteWithExtensions
-          ];
+          nativeBuildInputs = nativeBuildDeps;
 
           shellHook = ''
-            export BREW_PREFIX="''${BREW_PREFIX:-${sqliteWithExtensions.out}}"
-            echo "QMD development shell"
-            echo "Run: bun src/cli/qmd.ts <command>"
+            echo "qmd development shell"
+            echo "  cargo build --workspace          — debug build"
+            echo "  cargo build --profile dist -p qmd-cli  — release binary → target/dist/qmd"
+            echo "  cargo run --bin qmd -- <command> — run from source"
           '';
         };
       }
     );
-
 }

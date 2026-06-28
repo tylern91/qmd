@@ -4,9 +4,56 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # QMD - Query Markup Documents
 
-Use Bun for local development (`bun install`, not `npm install`). The codebase is dual-runtime: it runs on Node.js (>=22) and Bun, and CI tests both. The installed `bin/qmd` launcher prefers Node in dist mode for native-module ABI safety.
+A hybrid local document search engine that ships as a single static binary. No Node, no Bun, no native-module rebuild step.
 
-## Commands
+## Build & test
+
+```sh
+# Build all workspace crates (fast debug)
+cargo build --workspace
+
+# Build with the ORT (ONNX Runtime / CoreML / CUDA) backend
+cargo build -p qmd-cli --features ort-backend
+
+# Run the binary directly from source
+cargo run --bin qmd -- <command>
+
+# Optimized release binary (~60MB, fat LTO + stripped)
+cargo build --profile dist -p qmd-cli
+# → target/dist/qmd
+
+# Check formatting and lints
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+
+# Unit tests (no model downloads required)
+cargo test --workspace --lib
+
+# Search quality regression gate (BM25, runs in CI, no models)
+cargo run --bin qmd -- eval --mode bm25
+
+# Full eval with models (local only, not CI)
+cargo run --bin qmd -- eval --mode vec --verbose
+cargo run --bin qmd -- eval --mode hybrid --verbose
+```
+
+## Crate map
+
+```
+crates/
+├── qmd-core/   # Engine: chunking, FTS (Tantivy), vector (usearch/HNSW), RRF fusion,
+│               # document/collection CRUD, SQLite metadata, .qmd/index.yaml config.
+│               # Key entry point: Store::open() / hybridQuery() in src/store.rs.
+├── qmd-llm/    # Inference backend abstraction (InferenceBackend trait) + implementations:
+│               # LlamaCppBackend (GGUF, Metal/CPU), OrtBackend (ONNX, CoreML/CUDA/DirectML).
+│               # Model download via hf-hub; env vars: QMD_INFERENCE_BACKEND, QMD_ORT_EP.
+├── qmd-cli/    # CLI (clap): all subcommands + output formats (cli/json/csv/md/xml/files).
+│               # Eval harness (no model) embeds 6 fixture docs via include_str!.
+└── qmd-mcp/    # MCP server (rmcp 1.8.0): stdio + Streamable HTTP (Axum).
+                # Tools: query, search, get, multi_get, status. HTTP port default 8181.
+```
+
+## CLI commands
 
 ```sh
 qmd collection add . --name <n>   # Create/index collection
@@ -24,186 +71,53 @@ qmd multi-get <pattern>           # Get multiple docs by glob or comma-separated
 qmd status                        # Show index status and collections
 qmd doctor                        # Diagnose config, index, model, and device issues
 qmd update                        # Re-index collections; configured update hooks run first
-qmd embed                         # Generate vector embeddings (uses node-llama-cpp)
-qmd query <query>                 # Search with query expansion + reranking (recommended)
+qmd embed                         # Generate vector embeddings (downloads GGUF models on first run)
+qmd query <query>                 # Hybrid search: BM25 + vector + rerank (recommended)
 qmd search <query>                # Full-text keyword search (BM25, no LLM)
 qmd vsearch <query>               # Vector similarity search (no reranking)
-qmd bench <fixture.json>          # Run search-quality benchmarks
+qmd bench [--rounds N]            # Embedding throughput benchmark
+qmd eval [--mode bm25|vec|hybrid] # Search quality evaluation
 qmd mcp                           # Start MCP server (stdio transport)
 qmd mcp --http [--port N]         # Start MCP server (HTTP, default port 8181)
 qmd mcp --http --daemon           # Start as background daemon
 qmd mcp stop                      # Stop background MCP daemon
 ```
 
-## Collection Management
-
-```sh
-# List all collections
-qmd collection list
-
-# Create a collection with explicit name
-qmd collection add ~/Documents/notes --name mynotes --mask '**/*.md'
-
-# Remove a collection
-qmd collection remove mynotes
-
-# Rename a collection
-qmd collection rename mynotes my-notes
-
-# Show collection details
-qmd collection show mynotes
-
-# Set or clear the pre-update hook (runs before re-indexing on `qmd update`)
-qmd collection update-cmd mynotes 'git pull --ff-only'
-qmd collection update-cmd mynotes            # clear
-
-# Include or exclude from default (unscoped) queries
-qmd collection exclude mynotes
-qmd collection include mynotes
-
-# List all files in a collection
-qmd ls mynotes
-
-# List files with a path prefix
-qmd ls journals/2025
-qmd ls qmd://journals/2025
-```
-
-## Context Management
-
-```sh
-# Add context to current directory (auto-detects collection)
-qmd context add "Description of these files"
-
-# Add context to a specific path
-qmd context add /subfolder "Description for subfolder"
-
-# Add global context to all collections (system message)
-qmd context add / "Always include this context"
-
-# Add context using virtual paths
-qmd context add qmd://journals/ "Context for entire journals collection"
-qmd context add qmd://journals/2024 "Journal entries from 2024"
-
-# List all contexts
-qmd context list
-
-# Check for collections or paths without context
-qmd context check
-
-# Remove context
-qmd context rm qmd://journals/2024
-qmd context rm /  # Remove global context
-```
-
-## Document IDs (docid)
-
-Each document has a unique short ID (docid) - the first 6 characters of its content hash.
-Docids are shown in search results as `#abc123` and can be used with `get` and `multi-get`:
-
-```sh
-# Search returns docid in results
-qmd search "query" --json
-# Output: [{"docid": "#abc123", "score": 0.85, "file": "docs/readme.md", ...}]
-
-# Get document by docid
-qmd get "#abc123"
-qmd get abc123              # Leading # is optional
-
-# Docids also work in multi-get comma-separated lists
-qmd multi-get "#abc123, #def456"
-```
-
-## Options
-
-```sh
-# Search & retrieval
--c, --collection <name>  # Restrict search to collection(s) (repeatable)
--n <num>                 # Number of results
---all                    # Return all matches
---min-score <num>        # Minimum score threshold
---full                   # Show full document content
---intent <text>          # Describe what you're after to sharpen ranking (query)
---no-rerank              # Skip LLM reranking (faster, lower quality)
---full-path              # Show on-disk paths instead of qmd:// URIs
-
-# Get / multi-get
--l <num>                 # Maximum lines per file
---max-bytes <num>        # Skip files larger than this (default 10KB)
---no-line-numbers        # Disable line numbers (on by default for get/multi-get)
-
-# Output format (search, query, multi-get)
---format <kind>          # cli (default) | json | csv | md | xml | files
-                         # legacy --json/--csv/--md/--xml/--files still work as aliases
-```
-
-## Development
-
-```sh
-bun run qmd <command>          # Run CLI from source (tsx under the hood)
-bun src/cli/qmd.ts <command>   # Equivalent direct form
-bun link                       # Install globally as 'qmd' for local testing
-
-npm run build                  # node scripts/build.mjs → tsc to dist/ + shebang inject
-npm run test:types             # Type-check only (tsc --noEmit)
-```
-
-There is **no ESLint / Prettier / Biome and no lint/format script**. TypeScript type-checking (`strict`, `noUncheckedIndexedAccess`) is the only static-quality gate.
-
-## Tests
-
-Tests live in `test/` and run under **two runtimes** against the same suite — both must pass. Vitest runs under Node and ignores the preload; `bun test` requires `--preload ./src/test-preload.ts`. Tests execute serially (`fileParallelism: false`) because they share a SQLite index.
-
-```sh
-npm test                                             # Full suite: typecheck + Vitest(Node) + Bun + smoke
-npm run test:node                                    # Vitest under Node only
-npm run test:bun                                     # Bun runner only
-
-# Run everything directly:
-npx vitest run --reporter=verbose test/
-bun test --preload ./src/test-preload.ts test/
-
-# Run a single file or single test by name:
-npx vitest run test/cli.test.ts
-npx vitest run test/cli.test.ts -t "name substring"
-bun test --preload ./src/test-preload.ts test/cli.test.ts
-```
-
 ## Architecture
 
-- SQLite FTS5 for full-text search (BM25)
-- sqlite-vec for vector similarity search
-- node-llama-cpp for embeddings (embeddinggemma), reranking (qwen3-reranker), and query expansion (Qwen3)
-- Reciprocal Rank Fusion (RRF) for combining results
-- Smart chunking: 900 tokens/chunk with 15% overlap, prefers markdown headings as boundaries
-- AST-aware chunking: use `--chunk-strategy auto` to chunk code files (.ts/.js/.py/.go/.rs) at function/class/import boundaries via tree-sitter. Default is `regex` (existing behavior). Markdown and unknown file types always use regex chunking.
+- **BM25:** Tantivy FTS (field boosts: filepath=1.5, title=4.0, body=1.0)
+- **Vector:** usearch HNSW (cosine similarity, f32)
+- **Fusion:** Reciprocal Rank Fusion (k=60, original-query weight 2.0, top-rank bonuses)
+- **Reranking:** Qwen3-Reranker-0.6B via llama-cpp-2 (cross-encoder, `LlamaPoolingType::Rank`)
+- **Embeddings:** embeddinggemma-300M Q8_0 GGUF (dim=768, Metal/CPU)
+- **Chunking:** 900 tokens/chunk, 15% overlap, heading-scored break points
+- **Model cache:** `~/.cache/huggingface/hub/` (hf-hub, Python-compatible layout)
+- **Index location:** `~/.cache/qmd-rs/` (Tantivy + usearch HNSW, SQLite metadata)
+- **Config:** `~/.qmd/index.yaml` or project-local `.qmd/index.yaml`
 
-### Codebase layout
+**Query flow** (`hybridQuery` in `crates/qmd-core/src/store.rs`): BM25 probe (strong single top result short-circuits LLM expansion) → query expansion (lex/vec/hyde variants via Qwen3) → Tantivy FTS for lexical expansions + batched vector search for vec/hyde → Reciprocal Rank Fusion → cross-encoder rerank (skip with `--no-rerank`).
 
-The codebase is deliberately flat and framework-light — most logic lives in a few large top-level files in `src/`. Navigate by grep / symbol, not full reads.
+## Environment variables
 
-- `src/store.ts` (~5400 lines) — core engine: chunking, FTS5 + vector search, RRF fusion, query expansion, reranking, document/collection CRUD, and the SQLite schema (migrations gated on `PRAGMA user_version`). The search orchestrator is `hybridQuery()`; `vectorSearchQuery()` backs `vsearch`.
-- `src/llm.ts` (~2000 lines) — all node-llama-cpp integration: model resolution/download (cache at `~/.cache/qmd/models`), embeddings, reranking, query-expansion generation, GPU mode resolution (`QMD_FORCE_CPU` / `--no-gpu` forces CPU).
-- `src/db.ts` — cross-runtime SQLite layer (bun:sqlite vs better-sqlite3), WAL + busy-timeout setup, `loadSqliteVec()`. Vector features degrade gracefully: BM25 still works if sqlite-vec is unavailable.
-- `src/collections.ts` — `.qmd/index.yaml` config file management, collections, contexts.
-- `src/cli/qmd.ts` — CLI entry; no CLI framework, uses Node's `util.parseArgs` and a single `switch` on the first positional. `src/cli/formatter.ts` handles output formats (cli/json/csv/md/xml/files).
-- `src/mcp/server.ts` — MCP server (`@modelcontextprotocol/sdk`), stdio + Streamable-HTTP transports.
-- `src/ast.ts` — tree-sitter AST chunking for code files. `src/index.ts` — public library API.
-
-**Query flow** (`hybridQuery` in `store.ts`): BM25 probe (a strong single top result short-circuits LLM expansion) → query expansion (lex/vec/hyde variants) → FTS5 for lexical expansions + batched vector search for vec/hyde → Reciprocal Rank Fusion → cross-encoder rerank (skip with `--no-rerank`).
+| Variable | Effect |
+|---|---|
+| `QMD_FORCE_CPU=1` | Disable Metal/CUDA GPU offload for LlamaCpp models |
+| `QMD_INFERENCE_BACKEND=llama\|ort` | Select inference backend (default: llama) |
+| `QMD_ORT_EP=auto\|coreml\|cuda\|directml\|cpu` | ORT execution provider |
+| `QMD_CI=1` | Skip model downloads (CI / offline use) |
+| `HF_HUB_OFFLINE=1` | Use only locally cached HF models |
 
 ## Important: Do NOT run automatically
 
 - Never run `qmd collection add`, `qmd embed`, or `qmd update` automatically
-- Never modify the SQLite database directly
+- Never modify the SQLite metadata database directly
+- Never modify Tantivy index files directly (in `~/.cache/qmd-rs/`)
 - Write out example commands for the user to run manually
-- Index is stored at `~/.cache/qmd/index.sqlite`
 
-## Do NOT compile
+## Do NOT compile incorrectly
 
-- Never run `bun build --compile` — it overwrites the `bin/qmd` launcher and breaks sqlite-vec (native modules cannot be bundled into a single compiled binary).
-- `bin/qmd` is a **Node.js launcher** (the `bin` entry in `package.json`), not a shell script. It picks a runtime and runs `dist/cli/qmd.js` (or `src/` in a git checkout). Do not replace it.
-- `npm run build` runs `node scripts/build.mjs`, which compiles TypeScript to `dist/` via `tsc -p tsconfig.build.json` and injects the `#!/usr/bin/env node` shebang.
+- Do not run `cargo build --compile` with bundling — native `.dylib` / `.so` dependencies (llama.cpp, usearch, ort) cannot be statically bundled that way.
+- The correct release binary command is: `cargo build --profile dist -p qmd-cli`
 
 ## Releasing
 
@@ -213,6 +127,6 @@ release workflow, and git hook setup are documented in the
 
 Key points:
 - Add changelog entries under `## [Unreleased]` **as you make changes**
-- The release script renames `[Unreleased]` → `[X.Y.Z] - date` at release time
+- The release script bumps crate versions, renames `[Unreleased]` → `[X.Y.Z] - date`, and creates a signed tag
 - Credit external PRs with `#NNN (thanks @username)`
-- GitHub releases roll up the full minor series (e.g. 1.2.0 through 1.2.3)
+- CI (`rust.yml`) builds the `dist` binary and uploads it as a GitHub artifact on release branch push

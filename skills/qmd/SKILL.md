@@ -2,7 +2,7 @@
 name: qmd
 description: Search local markdown knowledge bases, notes, docs, and wikis with QMD. Use when users ask to find notes, retrieve documents, inspect a wiki, answer from indexed markdown, or set up QMD access.
 license: MIT
-compatibility: Requires qmd CLI or MCP server. Install via `npm install -g @tobilu/qmd`.
+compatibility: Requires qmd CLI or MCP server. Install: download the release binary from GitHub or build from source with `cargo build --profile dist -p qmd-cli`.
 metadata:
   author: tobi
   version: "2.2.0"
@@ -249,7 +249,9 @@ Only mutate indexes when the user asked for setup or maintenance. Searching and
 retrieving are safe; collection/index mutation is not a casual first step.
 
 ```bash
-npm install -g @tobilu/qmd
+# Install: download the release binary from GitHub, or build from source:
+# git clone https://github.com/tobi/qmd && cd qmd
+# cargo build --profile dist -p qmd-cli && cp target/dist/qmd ~/.local/bin/
 qmd collection add ~/notes --name notes
 qmd update
 qmd embed

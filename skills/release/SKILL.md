@@ -1,12 +1,13 @@
 ---
 name: release
-description: Manage releases for this project. Validates changelog, installs git hooks, and cuts releases. Use when user says "/release", "release 1.0.5", "cut a release", or asks about the release process. NOT auto-invoked by the model.
+description: Manage releases for this project. Validates changelog, bumps Rust crate versions, and cuts releases. Use when user says "/release", "release 1.0.5", "cut a release", or asks about the release process. NOT auto-invoked by the model.
 disable-model-invocation: true
 ---
 
 # Release
 
-Cut a release, validate the changelog, and ensure git hooks are installed.
+Cut a release for the qmd Rust workspace: bump crate versions, finalize the
+changelog, tag, and let CI build + upload the dist binary.
 
 ## Usage
 
@@ -16,50 +17,77 @@ Cut a release, validate the changelog, and ensure git hooks are installed.
 
 When the user triggers `/release <version>`:
 
-1. **Gather context** — run `skills/release/scripts/release-context.sh <version>`.
-   This silently installs git hooks and prints everything needed: version info,
-   working directory status, commits since last release, files changed, current
-   `[Unreleased]` content, and the previous release entry for style reference.
+1. **Determine the version** — if a semver is provided, use it directly.
+   If `patch`/`minor`/`major` is given, read the current version from the
+   workspace `Cargo.toml` (or any crate's `Cargo.toml` since all share the
+   same version) and compute the bumped version.
 
-2. **Commit outstanding work** — if the context shows staged, modified, or
-   untracked files that belong in this release, commit them first. Use the
-   /commit skill or make well-formed commits directly.
+2. **Commit outstanding work** — check `git status`. If there are staged,
+   modified, or untracked changes that belong in this release, commit them
+   first with well-formed conventional commit messages.
 
-3. **Write the changelog** — if `[Unreleased]` is empty, write it now using
-   the commits and file changes from the context output. Follow the changelog
-   standard below. Re-run the context script after committing if needed.
+3. **Write the changelog** — if `[Unreleased]` in `CHANGELOG.md` is empty,
+   write it using `git log <last-tag>..HEAD --oneline` as source material.
+   Follow the changelog standard below. After editing, ask the user to
+   review before proceeding.
 
-4. **Cut the release** — run `scripts/release.sh <version>`. This renames
-   `[Unreleased]` → `[X.Y.Z] - date`, inserts a fresh `[Unreleased]`,
-   bumps `package.json`, commits, and tags.
-
-5. **Show the final changelog** — print the full `[Unreleased]` +
-   minor series rollup via `scripts/extract-changelog.sh <version>`.
-   Ask the user to confirm before pushing.
-
-6. **Push** — after explicit confirmation, run `git push origin main --tags`.
-
-7. **Watch CI** — after the push, start a background dispatch to watch the
-   publish workflow. Use `interactive_shell` in dispatch mode with:
+4. **Bump crate versions** — update `version = "X.Y.Z"` in every crate's
+   `Cargo.toml`:
+   ```sh
+   for f in crates/*/Cargo.toml; do
+     sed -i '' 's/^version = ".*"/version = "X.Y.Z"/' "$f"
+   done
    ```
-   gh run watch $(gh run list --workflow=publish.yml --limit=1 --json databaseId --jq '.[0].databaseId') --exit-status
+   Then run `cargo build --workspace` to regenerate `Cargo.lock` and confirm
+   the build is still clean.
+
+5. **Finalize changelog** — rename `## [Unreleased]` → `## [X.Y.Z] - YYYY-MM-DD`
+   and insert a fresh empty `## [Unreleased]` above it. Commit with:
+   ```sh
+   git add CHANGELOG.md crates/*/Cargo.toml Cargo.lock
+   git commit -m "chore: release vX.Y.Z"
    ```
-   The agent will be notified when CI completes and should report the result.
 
-7. **Check dependency updates** — before cutting the release, check for
-   updates to `sqlite-vec` (and platform packages), `node-llama-cpp`,
-   and `better-sqlite3`. Run `pnpm outdated` and report any available
-   updates for these packages. If updates exist, bump them (pinned, no
-   `^` ranges) and re-run tests before proceeding.
+6. **Tag** — create an annotated, GPG-signed tag:
+   ```sh
+   git tag -s "vX.Y.Z" -m "Release vX.Y.Z"
+   ```
 
-If any step fails, stop and explain. Never force-push or skip validation.
+7. **Show summary** — print the new changelog section and the git log since
+   the last release. Ask the user to confirm before pushing.
 
-## Dependency Policy
+8. **Push** — after explicit confirmation:
+   ```sh
+   git push origin release --tags
+   ```
+   This triggers `rust.yml` which builds the `dist` binary and uploads it
+   as a GitHub artifact (`qmd-macos-arm64`).
 
-All dependencies must be pinned to exact versions (no `^` or `~` ranges).
-The lockfile ensures reproducible installs. When adding or updating any
-dependency, always use the exact version string (e.g. `"3.18.1"` not
-`"^3.18.1"`).
+9. **Watch CI** — after the push, watch the `Rust CI` workflow:
+   ```sh
+   gh run watch $(gh run list --workflow=rust.yml --limit=1 --json databaseId --jq '.[0].databaseId') --exit-status
+   ```
+   Report the result when it completes.
+
+10. **Check dependency updates** — before cutting a release, run
+    `cargo outdated` and report any updates to key deps (`llama-cpp-2`,
+    `tantivy`, `usearch`, `rmcp`, `ort`). If updates exist, bump them in
+    `Cargo.toml` and re-run the eval gate before proceeding.
+
+If any step fails, stop and explain. Never force-push or skip the build
+verification step.
+
+## Quality gates (must pass before tagging)
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --lib
+cargo run --bin qmd -- eval --mode bm25   # BM25 gate — runs in CI
+```
+
+The `vec` and `hybrid` eval modes require downloaded models and are run
+locally (not in CI). Run them if you changed `qmd-llm` or `qmd-core`.
 
 ## Changelog Standard
 
@@ -81,34 +109,33 @@ pitch — what would you tell someone in 30 seconds? Only for significant
 releases; skip for small patches.
 
 ```markdown
-## [1.1.0] - 2026-03-01
+## [1.1.0] - 2026-07-01
 
-QMD now runs on both Node.js and Bun, with up to 2.7x faster reranking
-through parallel contexts. GPU auto-detection replaces the unreliable
-`gpu: "auto"` with explicit CUDA/Metal/Vulkan probing.
+qmd now ships with CoreML and CUDA acceleration backends via ONNX Runtime.
+Embedding throughput on Apple Silicon is 93 texts/sec via the ANE path,
+matching llama.cpp Metal performance with lower power consumption.
 ```
 
-**2. Detailed changelog (`### Changes` and `### Fixes`)**
+**2. Detailed changelog (`### Added`, `### Changed`, `### Fixed`)**
 
 ```markdown
-### Changes
+### Added
 
-- Runtime: support Node.js (>=22) alongside Bun. The `qmd` wrapper
-  auto-detects a suitable install via PATH. #149 (thanks @igrigorik)
-- Performance: parallel embedding & reranking — up to 2.7x faster on
-  multi-core machines.
+- OrtBackend: ONNX Runtime v2 with CoreML (macOS) and CUDA (Linux/Windows)
+  execution providers. Select with `QMD_INFERENCE_BACKEND=ort`.
 
-### Fixes
+### Fixed
 
-- Prevent VRAM waste from duplicate context creation during concurrent
-  `embedBatch` calls. #152 (thanks @jkrems)
+- MCP `query` tool panicked with "Cannot start a runtime from within a runtime"
+  when initializing the LlamaCpp backend from inside the async MCP handler.
+  Fixed with `tokio::task::block_in_place`. #7
 ```
 
 ### Writing guidelines
 
 - **Explain the why, not just the what.** The changelog is for users.
-- **Include numbers.** "2.7x faster", "17x less memory".
-- **Group by theme, not by file.** "Performance" not "Changes to llm.ts".
+- **Include numbers.** "93 texts/sec", "12x faster query latency".
+- **Group by theme, not by file.** "Performance" not "Changes to store.rs".
 - **Don't list every commit.** Aggregate related changes.
 - **Credit contributors:** end bullets with `#NNN (thanks @username)` for
   external PRs. No need to credit the repo owner.
@@ -123,17 +150,7 @@ through parallel contexts. GPU auto-detection replaces the unreliable
 ## GitHub Release Notes
 
 Each GitHub release includes the full changelog for the **minor series** back
-to x.x.0. The `scripts/extract-changelog.sh` script handles this, and the
-publish workflow (`publish.yml`) calls it to populate the GitHub release.
-
-## Git Hooks
-
-The pre-push hook (`scripts/pre-push`) blocks `v*` tag pushes unless:
-
-1. `package.json` version matches the tag
-2. `CHANGELOG.md` has a `## [X.Y.Z] - date` entry for the version
-3. CI passed on GitHub (warns in non-interactive shells, blocks in terminals)
-
-Hooks are installed silently by the context script. They can also be installed
-manually via `skills/release/scripts/install-hooks.sh` or automatically via
-`bun install` (prepare script).
+to x.x.0. Populate the GitHub release body from the `## [X.Y.Z]` section and
+all patch entries since `## [X.Y.0]`. The dist binary artifact uploaded by
+`rust.yml` should be attached to the release manually (or automate via
+`gh release create`).
