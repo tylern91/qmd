@@ -77,7 +77,15 @@ pub fn reciprocal_rank_fusion(
 
     let mut results: Vec<(f32, RankedResult)> = scores
         .into_values()
-        .map(|e| (e.rrf_score, RankedResult { backend_score: e.rrf_score, ..e.result }))
+        .map(|e| {
+            (
+                e.rrf_score,
+                RankedResult {
+                    backend_score: e.rrf_score,
+                    ..e.result
+                },
+            )
+        })
         .collect();
 
     results.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));

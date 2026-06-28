@@ -31,18 +31,66 @@ struct BreakPattern {
 // level since a deeper heading would have another `#` in the [^#] position.
 // The extra char consumed is irrelevant; only m.start() (= the `\n` pos) is used.
 static BREAK_PATTERNS: &[BreakPattern] = &[
-    BreakPattern { pattern: r"\n#[^#]",       score: 100, kind: "h1" },
-    BreakPattern { pattern: r"\n##[^#]",      score: 90,  kind: "h2" },
-    BreakPattern { pattern: r"\n###[^#]",     score: 80,  kind: "h3" },
-    BreakPattern { pattern: r"\n####[^#]",    score: 70,  kind: "h4" },
-    BreakPattern { pattern: r"\n#####[^#]",   score: 60,  kind: "h5" },
-    BreakPattern { pattern: r"\n######[^#]",  score: 50,  kind: "h6" },
-    BreakPattern { pattern: r"\n```",         score: 80,  kind: "codeblock" },
-    BreakPattern { pattern: r"\n(?:---|\*\*\*|___)\s*\n", score: 60, kind: "hr" },
-    BreakPattern { pattern: r"\n\n+",         score: 20,  kind: "blank" },
-    BreakPattern { pattern: r"\n[-*]\s",      score: 5,   kind: "list" },
-    BreakPattern { pattern: r"\n\d+\.\s",     score: 5,   kind: "numlist" },
-    BreakPattern { pattern: r"\n",            score: 1,   kind: "newline" },
+    BreakPattern {
+        pattern: r"\n#[^#]",
+        score: 100,
+        kind: "h1",
+    },
+    BreakPattern {
+        pattern: r"\n##[^#]",
+        score: 90,
+        kind: "h2",
+    },
+    BreakPattern {
+        pattern: r"\n###[^#]",
+        score: 80,
+        kind: "h3",
+    },
+    BreakPattern {
+        pattern: r"\n####[^#]",
+        score: 70,
+        kind: "h4",
+    },
+    BreakPattern {
+        pattern: r"\n#####[^#]",
+        score: 60,
+        kind: "h5",
+    },
+    BreakPattern {
+        pattern: r"\n######[^#]",
+        score: 50,
+        kind: "h6",
+    },
+    BreakPattern {
+        pattern: r"\n```",
+        score: 80,
+        kind: "codeblock",
+    },
+    BreakPattern {
+        pattern: r"\n(?:---|\*\*\*|___)\s*\n",
+        score: 60,
+        kind: "hr",
+    },
+    BreakPattern {
+        pattern: r"\n\n+",
+        score: 20,
+        kind: "blank",
+    },
+    BreakPattern {
+        pattern: r"\n[-*]\s",
+        score: 5,
+        kind: "list",
+    },
+    BreakPattern {
+        pattern: r"\n\d+\.\s",
+        score: 5,
+        kind: "numlist",
+    },
+    BreakPattern {
+        pattern: r"\n",
+        score: 1,
+        kind: "newline",
+    },
 ];
 
 #[derive(Debug, Clone)]
@@ -83,12 +131,18 @@ fn scan_code_fences(text: &str) -> Vec<CodeFenceRegion> {
             opens.push(m.start());
         } else {
             let start = opens.pop().unwrap();
-            fences.push(CodeFenceRegion { start, end: m.end() });
+            fences.push(CodeFenceRegion {
+                start,
+                end: m.end(),
+            });
         }
     }
     // Unclosed fence extends to end of document
     for start in opens {
-        fences.push(CodeFenceRegion { start, end: text.len() });
+        fences.push(CodeFenceRegion {
+            start,
+            end: text.len(),
+        });
     }
     fences
 }
@@ -148,7 +202,10 @@ fn best_break_in_window(
 /// breaking at high-score positions (headings, paragraph breaks, etc.).
 pub fn chunk_document(text: &str) -> Vec<Chunk> {
     if text.len() <= CHUNK_SIZE_CHARS {
-        return vec![Chunk { text: text.to_string(), pos: 0 }];
+        return vec![Chunk {
+            text: text.to_string(),
+            pos: 0,
+        }];
     }
 
     let fences = scan_code_fences(text);
@@ -160,7 +217,10 @@ pub fn chunk_document(text: &str) -> Vec<Chunk> {
     while start < text.len() {
         let ideal_end = (start + CHUNK_SIZE_CHARS).min(text.len());
         if ideal_end == text.len() {
-            chunks.push(Chunk { text: text[start..].to_string(), pos: start });
+            chunks.push(Chunk {
+                text: text[start..].to_string(),
+                pos: start,
+            });
             break;
         }
 
@@ -172,7 +232,10 @@ pub fn chunk_document(text: &str) -> Vec<Chunk> {
         let end = break_at.max(ideal_end); // never go backwards
         let end = end.min(text.len());
 
-        chunks.push(Chunk { text: text[start..end].to_string(), pos: start });
+        chunks.push(Chunk {
+            text: text[start..end].to_string(),
+            pos: start,
+        });
 
         // Advance with overlap
         start = end.saturating_sub(CHUNK_OVERLAP_CHARS);

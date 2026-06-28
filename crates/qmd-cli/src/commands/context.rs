@@ -3,7 +3,7 @@ use std::path::Path;
 
 use qmd_core::db;
 
-use crate::{ContextCommand, store};
+use crate::{store, ContextCommand};
 
 const CTX_PREFIX: &str = "context:";
 
@@ -32,9 +32,8 @@ fn add(index_dir: &Path, path: Option<&str>, text: &str) -> Result<()> {
 fn list(index_dir: &Path) -> Result<()> {
     let s = store::open_store_no_backend(index_dir)?;
     // Read all config keys that start with context:
-    let mut stmt = s.db.prepare(
-        "SELECT key, value FROM store_config WHERE key LIKE ?1 ORDER BY key"
-    )?;
+    let mut stmt =
+        s.db.prepare("SELECT key, value FROM store_config WHERE key LIKE ?1 ORDER BY key")?;
     let prefix = format!("{CTX_PREFIX}%");
     let rows: Vec<(String, String)> = stmt
         .query_map([&prefix], |row| Ok((row.get(0)?, row.get(1)?)))?
@@ -72,7 +71,10 @@ fn check(index_dir: &Path) -> Result<()> {
         let key = context_key(&format!("qmd://{}/", col.name));
         if db::get_config(&s.db, &key)?.is_none() {
             println!("MISSING context for collection '{}'", col.name);
-            println!("  Run: qmd context add qmd://{}/ \"<description>\"", col.name);
+            println!(
+                "  Run: qmd context add qmd://{}/ \"<description>\"",
+                col.name
+            );
             missing += 1;
         }
     }

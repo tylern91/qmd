@@ -6,7 +6,7 @@
 
 use anyhow::{Context, Result};
 use hex;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
@@ -17,13 +17,16 @@ use crate::types::{Collection, Document};
 /// Open (or create) the SQLite database and ensure schema is current.
 pub fn open_db(path: &Path) -> Result<Connection> {
     let conn = Connection::open(path).context("open sqlite db")?;
-    conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;")?;
+    conn.execute_batch(
+        "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;",
+    )?;
     init_schema(&conn)?;
     Ok(conn)
 }
 
 fn init_schema(conn: &Connection) -> Result<()> {
-    conn.execute_batch(r#"
+    conn.execute_batch(
+        r#"
         CREATE TABLE IF NOT EXISTS content (
             hash TEXT PRIMARY KEY,
             doc  TEXT NOT NULL,
@@ -77,7 +80,8 @@ fn init_schema(conn: &Connection) -> Result<()> {
             key   TEXT PRIMARY KEY,
             value TEXT
         );
-    "#)?;
+    "#,
+    )?;
     Ok(())
 }
 
@@ -319,9 +323,8 @@ pub fn doc_for_vid(conn: &Connection, vid: u64) -> Result<Option<(Document, Stri
 
 /// Load all (vid → (hash, seq)) pairs for rebuilding the HNSW index on startup.
 pub fn load_all_vid_mappings(conn: &Connection) -> Result<Vec<(u64, String, i64)>> {
-    let mut stmt = conn.prepare(
-        "SELECT vid, hash, seq FROM content_vectors WHERE vid IS NOT NULL ORDER BY vid",
-    )?;
+    let mut stmt = conn
+        .prepare("SELECT vid, hash, seq FROM content_vectors WHERE vid IS NOT NULL ORDER BY vid")?;
     let rows = stmt
         .query_map([], |row| {
             Ok((

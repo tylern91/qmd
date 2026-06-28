@@ -2,16 +2,15 @@ use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use qmd_core::{Collection, db};
+use qmd_core::{db, Collection};
 
-use crate::{
-    CollectionCommand,
-    store,
-};
+use crate::{store, CollectionCommand};
 
 pub fn run(index_dir: &Path, cmd: CollectionCommand) -> Result<()> {
     match cmd {
-        CollectionCommand::Add { path, name, mask } => add(index_dir, &path, name.as_deref(), mask.as_deref()),
+        CollectionCommand::Add { path, name, mask } => {
+            add(index_dir, &path, name.as_deref(), mask.as_deref())
+        }
         CollectionCommand::List => list(index_dir),
         CollectionCommand::Remove { name } => remove(index_dir, &name),
         CollectionCommand::Rename { old, new } => rename(index_dir, &old, &new),
@@ -27,13 +26,22 @@ fn add(index_dir: &Path, dir: &str, name: Option<&str>, mask: Option<&str>) -> R
         .canonicalize()
         .with_context(|| format!("cannot resolve path: {dir}"))?;
 
-    let collection_name = name.unwrap_or_else(|| {
-        abs_dir.file_name().and_then(|n| n.to_str()).unwrap_or("default")
-    }).to_string();
+    let collection_name = name
+        .unwrap_or_else(|| {
+            abs_dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("default")
+        })
+        .to_string();
 
     let pattern = mask.unwrap_or("**/*.md").to_string();
 
-    eprintln!("Adding collection '{}' → {}", collection_name, abs_dir.display());
+    eprintln!(
+        "Adding collection '{}' → {}",
+        collection_name,
+        abs_dir.display()
+    );
 
     let mut s = store::open_store_with_backend(index_dir)?;
 
@@ -59,14 +67,17 @@ fn add(index_dir: &Path, dir: &str, name: Option<&str>, mask: Option<&str>) -> R
         .filter_map(|e| e.ok())
     {
         let path = entry.path();
-        if !path.is_file() { continue; }
+        if !path.is_file() {
+            continue;
+        }
         if let Some(ref ext_filter) = ext {
             if path.extension().and_then(|e| e.to_str()) != Some(ext_filter.as_str()) {
                 continue;
             }
         }
 
-        let rel_path = path.strip_prefix(&abs_dir)
+        let rel_path = path
+            .strip_prefix(&abs_dir)
             .unwrap_or(path)
             .to_string_lossy()
             .to_string();
@@ -76,7 +87,8 @@ fn add(index_dir: &Path, dir: &str, name: Option<&str>, mask: Option<&str>) -> R
             Err(_) => continue, // skip non-UTF8 files silently
         };
 
-        let title = body.lines()
+        let title = body
+            .lines()
             .find(|l| !l.trim().is_empty())
             .unwrap_or(&rel_path)
             .trim_start_matches('#')
@@ -94,7 +106,14 @@ fn add(index_dir: &Path, dir: &str, name: Option<&str>, mask: Option<&str>) -> R
     }
 
     s.flush()?;
-    println!("\r  Indexed {count} document(s){}.", if errors > 0 { format!(", {errors} error(s)") } else { String::new() });
+    println!(
+        "\r  Indexed {count} document(s){}.",
+        if errors > 0 {
+            format!(", {errors} error(s)")
+        } else {
+            String::new()
+        }
+    );
     eprintln!("Collection '{}' ready.", collection_name);
     Ok(())
 }
@@ -106,12 +125,18 @@ fn list(index_dir: &Path) -> Result<()> {
         println!("No collections. Run `qmd collection add <path> --name <name>` to add one.");
         return Ok(());
     }
-    println!("{:<30}  {:<8}  {:<12}  {}", "NAME", "DOCS", "INCLUDED", "PATH");
+    println!(
+        "{:<30}  {:<8}  {:<12}  {}",
+        "NAME", "DOCS", "INCLUDED", "PATH"
+    );
     println!("{}", "─".repeat(80));
     for col in &cols {
         let count = db::list_documents(&s.db, Some(&col.name))?.len();
         let included = if col.include_by_default { "yes" } else { "no" };
-        println!("{:<30}  {:<8}  {:<12}  {}", col.name, count, included, col.path);
+        println!(
+            "{:<30}  {:<8}  {:<12}  {}",
+            col.name, count, included, col.path
+        );
     }
     Ok(())
 }
@@ -145,7 +170,9 @@ fn rename(index_dir: &Path, old: &str, new: &str) -> Result<()> {
 fn show(index_dir: &Path, name: &str) -> Result<()> {
     let s = store::open_store_no_backend(index_dir)?;
     let cols = db::list_collections(&s.db)?;
-    let col = cols.iter().find(|c| c.name == name)
+    let col = cols
+        .iter()
+        .find(|c| c.name == name)
         .with_context(|| format!("collection '{name}' not found"))?;
     let count = db::list_documents(&s.db, Some(name))?.len();
 
@@ -173,7 +200,11 @@ fn update_cmd(index_dir: &Path, name: &str, cmd: Option<&str>) -> Result<()> {
 fn set_include(index_dir: &Path, name: &str, include: bool) -> Result<()> {
     let s = store::open_store_no_backend(index_dir)?;
     db::set_collection_include(&s.db, name, include)?;
-    let verb = if include { "included in" } else { "excluded from" };
+    let verb = if include {
+        "included in"
+    } else {
+        "excluded from"
+    };
     println!("Collection '{name}' {verb} default queries.");
     Ok(())
 }

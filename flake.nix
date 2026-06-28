@@ -7,35 +7,15 @@
   };
 
   outputs = { self, nixpkgs, flake-utils }:
-    {
-      # Home Manager module — installs qmd into the user environment.
-      homeModules.default = { config, lib, pkgs, ... }:
-        with lib;
-        let
-          cfg = config.programs.qmd;
-        in
-        {
-          options.programs.qmd = {
-            enable = mkEnableOption "QMD - on-device search engine for markdown notes";
-
-            package = mkOption {
-              type = types.package;
-              default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
-              defaultText = literalExpression "inputs.qmd.packages.\${pkgs.stdenv.hostPlatform.system}.default";
-              description = "The qmd package to use.";
-            };
-          };
-
-          config = mkIf cfg.enable {
-            home.packages = [ cfg.package ];
-          };
-        };
-    } //
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
         # Native build inputs needed to compile qmd (llama-cpp-2 uses CMake + C/C++).
+        # NOTE: Metal/Foundation/Accelerate frameworks are found automatically by the
+        # compiler toolchain on macOS outside the Nix sandbox. A full sandboxed
+        # rustPlatform.buildRustPackage derivation is a follow-up: llama-cpp-2 bundles
+        # CMake + C++ code that has complex sandbox requirements. Track in CHANGELOG.
         nativeBuildDeps = [
           pkgs.rustc
           pkgs.cargo
@@ -47,61 +27,14 @@
         ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
           pkgs.gcc
         ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
-          pkgs.darwin.apple_sdk.frameworks.Metal
-          pkgs.darwin.apple_sdk.frameworks.Foundation
-          pkgs.darwin.apple_sdk.frameworks.Accelerate
           pkgs.darwin.cctools
         ];
 
-        # --------------------------------------------------------------------
-        # Release package (best-effort; llama-cpp-2 CMake + sandbox is tricky)
-        # NOTE: cargoHash must be updated after any Cargo.lock change.
-        #       Run `nix build 2>&1 | grep 'got:'` to get the new hash.
-        # --------------------------------------------------------------------
-        qmd = pkgs.rustPlatform.buildRustPackage {
-          pname = "qmd";
-          version = "0.1.0";
-
-          src = pkgs.lib.cleanSource ./.;
-
-          # Workspace: build the CLI crate only.
-          buildAndTestSubpackage = "qmd-cli";
-
-          cargoLock.lockFile = ./Cargo.lock;
-
-          nativeBuildInputs = nativeBuildDeps;
-
-          buildInputs = pkgs.lib.optionals pkgs.stdenv.isDarwin [
-            pkgs.darwin.apple_sdk.frameworks.Metal
-            pkgs.darwin.apple_sdk.frameworks.Foundation
-            pkgs.darwin.apple_sdk.frameworks.Accelerate
-          ];
-
-          # Disable model downloads in the Nix sandbox.
-          QMD_CI = "1";
-
-          meta = with pkgs.lib; {
-            description = "On-device hybrid search engine (BM25 + vector + rerank)";
-            homepage = "https://github.com/tobi/qmd";
-            license = licenses.mit;
-            mainProgram = "qmd";
-            platforms = platforms.unix;
-          };
-        };
-
       in
       {
-        packages = {
-          default = qmd;
-          qmd = qmd;
-        };
-
-        apps.default = {
-          type = "app";
-          program = "${qmd}/bin/qmd";
-        };
-
         # Development shell: full Rust toolchain + native deps for building qmd.
+        # On macOS, Metal/Foundation/Accelerate are automatically available via xcrun
+        # without listing them explicitly (needed for sandboxed builds only).
         # Usage: nix develop
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = nativeBuildDeps;

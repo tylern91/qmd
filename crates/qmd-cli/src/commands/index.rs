@@ -16,12 +16,14 @@ pub fn run_status(index_dir: &Path) -> Result<()> {
         .map(|m| m.len())
         .unwrap_or(0);
 
-    let total_docs: i64 = s.db.query_row(
-        "SELECT COUNT(*) FROM documents WHERE active=1", [], |r| r.get(0)
-    ).unwrap_or(0);
-    let total_vecs: i64 = s.db.query_row(
-        "SELECT COUNT(*) FROM content_vectors", [], |r| r.get(0)
-    ).unwrap_or(0);
+    let total_docs: i64 =
+        s.db.query_row("SELECT COUNT(*) FROM documents WHERE active=1", [], |r| {
+            r.get(0)
+        })
+        .unwrap_or(0);
+    let total_vecs: i64 =
+        s.db.query_row("SELECT COUNT(*) FROM content_vectors", [], |r| r.get(0))
+            .unwrap_or(0);
 
     println!("QMD Status (Rust engine)\n");
     println!("  Index:    {}", index_dir.display());
@@ -73,7 +75,9 @@ pub fn run_embed(index_dir: &Path, collection: Option<&str>) -> Result<()> {
         let mut count = 0usize;
         for doc in &docs {
             let body = db::get_content(&s.db, &doc.hash)?.unwrap_or_default();
-            if body.is_empty() { continue; }
+            if body.is_empty() {
+                continue;
+            }
             s.index_document(&doc.collection, &doc.path, &doc.title, &body)?;
             count += 1;
         }
@@ -112,26 +116,40 @@ pub fn run_update(index_dir: &Path, collection: Option<&str>) -> Result<()> {
             continue;
         }
 
-        let ext = col.pattern.rsplit('/').next()
+        let ext = col
+            .pattern
+            .rsplit('/')
+            .next()
             .and_then(|base| base.rsplit('.').next())
             .filter(|e| *e != "*")
             .map(|e| e.to_string());
 
         let mut count = 0usize;
-        for entry in WalkDir::new(dir).follow_links(true).into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(dir)
+            .follow_links(true)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             let path = entry.path();
-            if !path.is_file() { continue; }
+            if !path.is_file() {
+                continue;
+            }
             if let Some(ref ext_filter) = ext {
                 if path.extension().and_then(|e| e.to_str()) != Some(ext_filter.as_str()) {
                     continue;
                 }
             }
-            let rel = path.strip_prefix(dir).unwrap_or(path).to_string_lossy().to_string();
+            let rel = path
+                .strip_prefix(dir)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .to_string();
             let body = match std::fs::read_to_string(path) {
                 Ok(b) => b,
                 Err(_) => continue,
             };
-            let title = body.lines()
+            let title = body
+                .lines()
                 .find(|l| !l.trim().is_empty())
                 .unwrap_or(&rel)
                 .trim_start_matches('#')
@@ -171,9 +189,19 @@ pub fn run_doctor(index_dir: &Path) -> Result<()> {
 
     let db_path = index_dir.join("index.sqlite");
     println!("  Index dir:     {}", index_dir.display());
-    println!("  SQLite exists: {}", if db_path.exists() { "yes" } else { "NO — run any qmd command to create" });
+    println!(
+        "  SQLite exists: {}",
+        if db_path.exists() {
+            "yes"
+        } else {
+            "NO — run any qmd command to create"
+        }
+    );
     println!("  Tantivy dir:   {}", index_dir.join("tantivy").display());
-    println!("  HNSW file:     {}", index_dir.join("hnsw.usearch").display());
+    println!(
+        "  HNSW file:     {}",
+        index_dir.join("hnsw.usearch").display()
+    );
     println!();
 
     // Check models cache
@@ -182,13 +210,25 @@ pub fn run_doctor(index_dir: &Path) -> Result<()> {
         .join("huggingface/hub");
     println!("  Model cache:   {}", model_cache.display());
 
-    let embed_model = model_cache
-        .join("models--ggml-org--embeddinggemma-300M-GGUF");
-    println!("  Embed model:   {}", if embed_model.exists() { "cached ✓" } else { "not cached (downloads on first embed/query)" });
+    let embed_model = model_cache.join("models--ggml-org--embeddinggemma-300M-GGUF");
+    println!(
+        "  Embed model:   {}",
+        if embed_model.exists() {
+            "cached ✓"
+        } else {
+            "not cached (downloads on first embed/query)"
+        }
+    );
 
-    let rerank_model = model_cache
-        .join("models--ggml-org--Qwen3-Reranker-0.6B-Q8_0-GGUF");
-    println!("  Rerank model:  {}", if rerank_model.exists() { "cached ✓" } else { "not cached" });
+    let rerank_model = model_cache.join("models--ggml-org--Qwen3-Reranker-0.6B-Q8_0-GGUF");
+    println!(
+        "  Rerank model:  {}",
+        if rerank_model.exists() {
+            "cached ✓"
+        } else {
+            "not cached"
+        }
+    );
 
     // Check GPU
     #[cfg(target_os = "macos")]
@@ -209,14 +249,21 @@ pub fn run_doctor(index_dir: &Path) -> Result<()> {
 }
 
 fn fmt_bytes(b: u64) -> String {
-    if b < 1024 { format!("{b} B") }
-    else if b < 1024 * 1024 { format!("{:.1} KB", b as f64 / 1024.0) }
-    else if b < 1024 * 1024 * 1024 { format!("{:.1} MB", b as f64 / (1024.0 * 1024.0)) }
-    else { format!("{:.1} GB", b as f64 / (1024.0 * 1024.0 * 1024.0)) }
+    if b < 1024 {
+        format!("{b} B")
+    } else if b < 1024 * 1024 {
+        format!("{:.1} KB", b as f64 / 1024.0)
+    } else if b < 1024 * 1024 * 1024 {
+        format!("{:.1} MB", b as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.1} GB", b as f64 / (1024.0 * 1024.0 * 1024.0))
+    }
 }
 
 fn dir_size(dir: &Path) -> u64 {
-    if !dir.exists() { return 0; }
+    if !dir.exists() {
+        return 0;
+    }
     WalkDir::new(dir)
         .into_iter()
         .filter_map(|e| e.ok())

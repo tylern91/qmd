@@ -30,19 +30,37 @@ fn libc_isatty(fd: i32) -> bool {
 }
 
 #[cfg(not(unix))]
-fn libc_isatty(_fd: i32) -> bool { false }
+fn libc_isatty(_fd: i32) -> bool {
+    false
+}
 
 fn b(s: &str) -> String {
-    if ansi_enabled() { format!("{BOLD}{s}{RESET}") } else { s.to_string() }
+    if ansi_enabled() {
+        format!("{BOLD}{s}{RESET}")
+    } else {
+        s.to_string()
+    }
 }
 fn dim(s: &str) -> String {
-    if ansi_enabled() { format!("{DIM}{s}{RESET}") } else { s.to_string() }
+    if ansi_enabled() {
+        format!("{DIM}{s}{RESET}")
+    } else {
+        s.to_string()
+    }
 }
 fn cyan(s: &str) -> String {
-    if ansi_enabled() { format!("{CYAN}{s}{RESET}") } else { s.to_string() }
+    if ansi_enabled() {
+        format!("{CYAN}{s}{RESET}")
+    } else {
+        s.to_string()
+    }
 }
 fn yellow(s: &str) -> String {
-    if ansi_enabled() { format!("{YELLOW}{s}{RESET}") } else { s.to_string() }
+    if ansi_enabled() {
+        format!("{YELLOW}{s}{RESET}")
+    } else {
+        s.to_string()
+    }
 }
 
 // ── Format dispatch ───────────────────────────────────────────────────────────
@@ -68,7 +86,12 @@ fn print_cli(results: &[SearchResult], show_full: bool) {
     for (i, r) in results.iter().enumerate() {
         let score_label = yellow(&format!("{:.3}", r.score));
         let path_label = cyan(&format!("qmd://{}/{}", r.collection, r.path));
-        println!("{} {} {}", dim(&format!("[{}]", i + 1)), b(&r.title), dim(&format!("#{}", r.docid)));
+        println!(
+            "{} {} {}",
+            dim(&format!("[{}]", i + 1)),
+            b(&r.title),
+            dim(&format!("#{}", r.docid))
+        );
         println!("  {} {} {}", path_label, dim("·"), score_label);
         let snippet = if show_full {
             r.body.trim().to_string()
@@ -203,11 +226,15 @@ pub fn print_document(
 
     match format {
         "json" => {
-            println!("{}", serde_json::to_string_pretty(&serde_json::json!({
-                "file": file,
-                "title": title,
-                "body": text,
-            })).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "file": file,
+                    "title": title,
+                    "body": text,
+                }))
+                .unwrap_or_default()
+            );
         }
         "files" => {
             println!("{file}");

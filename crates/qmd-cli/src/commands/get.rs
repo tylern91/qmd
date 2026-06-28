@@ -16,10 +16,16 @@ impl PathSpec {
         let s = s.trim_start_matches("qmd://");
         if let Some(rest) = s.strip_prefix('#') {
             // docid — handled separately
-            return Some(Self { collection: String::new(), path: format!("#{rest}") });
+            return Some(Self {
+                collection: String::new(),
+                path: format!("#{rest}"),
+            });
         }
         let (col, path) = s.split_once('/')?;
-        Some(Self { collection: col.to_string(), path: path.to_string() })
+        Some(Self {
+            collection: col.to_string(),
+            path: path.to_string(),
+        })
     }
 
     fn is_docid(&self) -> bool {
@@ -40,16 +46,15 @@ pub fn run_get(
 ) -> Result<()> {
     let s = store::open_store_no_backend(index_dir)?;
 
-    let spec = PathSpec::parse(path_arg)
-        .with_context(|| format!("cannot parse path: {path_arg}"))?;
+    let spec =
+        PathSpec::parse(path_arg).with_context(|| format!("cannot parse path: {path_arg}"))?;
 
     let (title, body, file) = if spec.is_docid() {
         // Look up by hash prefix
         let docid = spec.docid_hex();
         let doc = db::get_document_by_docid_prefix(&s.db, docid)?
             .with_context(|| format!("no document found with docid #{docid}"))?;
-        let body = db::get_content(&s.db, &doc.hash)?
-            .unwrap_or_default();
+        let body = db::get_content(&s.db, &doc.hash)?.unwrap_or_default();
         let file = format!("qmd://{}/{}", doc.collection, doc.path);
         (doc.title, body, file)
     } else {
@@ -144,8 +149,15 @@ pub fn run_ls(index_dir: &Path, path: Option<&str>) -> Result<()> {
         }
         for col in &cols {
             let count = db::list_documents(&s.db, Some(&col.name))?.len();
-            let default_marker = if col.include_by_default { "" } else { " (excluded)" };
-            println!("{:30}  {} docs  {}{}", col.name, count, col.path, default_marker);
+            let default_marker = if col.include_by_default {
+                ""
+            } else {
+                " (excluded)"
+            };
+            println!(
+                "{:30}  {} docs  {}{}",
+                col.name, count, col.path, default_marker
+            );
         }
     }
 
@@ -161,7 +173,9 @@ fn glob_match(pattern: &str, target: &str) -> bool {
     let mut rest = target;
     for (i, part) in parts.iter().enumerate() {
         if i == 0 {
-            if !rest.starts_with(part) { return false; }
+            if !rest.starts_with(part) {
+                return false;
+            }
             rest = &rest[part.len()..];
         } else if i == parts.len() - 1 {
             return rest.ends_with(part);

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use qmd_core::{Store, StoreConfig};
-use qmd_llm::{no_backend, BackendKind, create_backend};
+use qmd_llm::{create_backend, no_backend, BackendKind};
 use std::path::{Path, PathBuf};
 
 /// Resolve the index directory:
@@ -50,4 +50,3 @@ pub fn open_store_with_backend_kind(index_dir: &Path, kind: &BackendKind) -> Res
     let backend = create_backend(kind).context("failed to initialize inference backend")?;
     Store::open(store_config(index_dir), backend)
 }
-

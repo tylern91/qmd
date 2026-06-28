@@ -33,7 +33,13 @@ impl FtsSchema {
         // doc_id stored as an i64 fast field for retrieval
         let doc_id = builder.add_i64_field("doc_id", STORED | FAST);
         let schema = builder.build();
-        Self { schema, filepath, title, body, doc_id }
+        Self {
+            schema,
+            filepath,
+            title,
+            body,
+            doc_id,
+        }
     }
 }
 
@@ -68,16 +74,20 @@ impl FtsIndex {
             .try_into()
             .context("index reader")?;
 
-        let mut query_parser = QueryParser::for_index(
-            &index,
-            vec![schema.filepath, schema.title, schema.body],
-        );
+        let mut query_parser =
+            QueryParser::for_index(&index, vec![schema.filepath, schema.title, schema.body]);
         // BM25 field boosts matching qmd's `bm25(documents_fts, 1.5, 4.0, 1.0)`.
         query_parser.set_field_boost(schema.filepath, 1.5);
         query_parser.set_field_boost(schema.title, 4.0);
         query_parser.set_field_boost(schema.body, 1.0);
 
-        Ok(Self { schema, index, reader, writer: None, query_parser })
+        Ok(Self {
+            schema,
+            index,
+            reader,
+            writer: None,
+            query_parser,
+        })
     }
 
     /// Acquire the writer on first call; subsequent calls reuse it.
@@ -90,10 +100,19 @@ impl FtsIndex {
 
     /// Add or update a document in the index.
     /// Callers should call `commit()` after batching inserts.
-    pub fn add_document(&mut self, filepath: &str, title: &str, body: &str, doc_id: i64) -> Result<()> {
+    pub fn add_document(
+        &mut self,
+        filepath: &str,
+        title: &str,
+        body: &str,
+        doc_id: i64,
+    ) -> Result<()> {
         // Extract Copy fields before borrowing the writer.
         let (f_filepath, f_title, f_body, f_doc_id) = (
-            self.schema.filepath, self.schema.title, self.schema.body, self.schema.doc_id,
+            self.schema.filepath,
+            self.schema.title,
+            self.schema.body,
+            self.schema.doc_id,
         );
         let term = tantivy::Term::from_field_text(f_filepath, filepath);
         let w = self.writer_mut()?;

@@ -17,26 +17,27 @@ pub async fn run_stdio(server: QmdServer) -> Result<()> {
 /// the server is shut down).
 pub async fn run_http(server: QmdServer, port: u16) -> Result<()> {
     use rmcp::transport::streamable_http_server::{
-        StreamableHttpService, StreamableHttpServerConfig,
-        session::local::LocalSessionManager,
+        session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
     };
 
     let mut config = StreamableHttpServerConfig::default();
     config.allowed_hosts = vec!["localhost".to_string(), "127.0.0.1".to_string()];
 
-    let service: StreamableHttpService<QmdServer, LocalSessionManager> =
-        StreamableHttpService::new(
-            move || Ok(server.clone()),
-            Arc::new(LocalSessionManager::default()),
-            config,
-        );
+    let service: StreamableHttpService<QmdServer, LocalSessionManager> = StreamableHttpService::new(
+        move || Ok(server.clone()),
+        Arc::new(LocalSessionManager::default()),
+        config,
+    );
 
     let addr = format!("127.0.0.1:{port}");
     eprintln!("QMD MCP server listening on http://{addr}/mcp");
     eprintln!("Health endpoint:            http://{addr}/health");
 
     let router = axum::Router::new()
-        .route("/health", axum::routing::get(|| async { (axum::http::StatusCode::OK, "ok") }))
+        .route(
+            "/health",
+            axum::routing::get(|| async { (axum::http::StatusCode::OK, "ok") }),
+        )
         .nest_service("/mcp", service);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, router).await?;

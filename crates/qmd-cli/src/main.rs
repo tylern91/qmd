@@ -173,10 +173,7 @@ pub enum CollectionCommand {
 #[derive(Subcommand)]
 pub enum ContextCommand {
     /// Add context for a path
-    Add {
-        path: Option<String>,
-        text: String,
-    },
+    Add { path: Option<String>, text: String },
     /// List all contexts
     List,
     /// Remove context for a path
@@ -200,30 +197,71 @@ fn main() -> Result<()> {
     let index_dir = store::resolve_index_dir(cli.index_dir.as_deref())?;
 
     match cli.command {
-        Commands::Query { query, collection, num, format, no_rerank, full } => {
-            commands::query::run_query(&index_dir, &query, collection.as_deref(), num, &format, no_rerank, full)
-        }
-        Commands::Search { query, collection, num, format, full } => {
-            commands::query::run_search(&index_dir, &query, collection.as_deref(), num, &format, full)
-        }
-        Commands::Vsearch { query, collection, num, format, full } => {
-            commands::query::run_vsearch(&index_dir, &query, collection.as_deref(), num, &format, full)
-        }
-        Commands::Get { path, max_lines, no_line_numbers, format } => {
-            commands::get::run_get(&index_dir, &path, max_lines, no_line_numbers, &format)
-        }
-        Commands::MultiGet { pattern, collection, max_lines, format } => {
-            commands::get::run_multi_get(&index_dir, &pattern, collection.as_deref(), max_lines, &format)
-        }
-        Commands::Ls { path } => {
-            commands::get::run_ls(&index_dir, path.as_deref())
-        }
-        Commands::Collection(cmd) => {
-            commands::collection::run(&index_dir, cmd)
-        }
-        Commands::Context(cmd) => {
-            commands::context::run(&index_dir, cmd)
-        }
+        Commands::Query {
+            query,
+            collection,
+            num,
+            format,
+            no_rerank,
+            full,
+        } => commands::query::run_query(
+            &index_dir,
+            &query,
+            collection.as_deref(),
+            num,
+            &format,
+            no_rerank,
+            full,
+        ),
+        Commands::Search {
+            query,
+            collection,
+            num,
+            format,
+            full,
+        } => commands::query::run_search(
+            &index_dir,
+            &query,
+            collection.as_deref(),
+            num,
+            &format,
+            full,
+        ),
+        Commands::Vsearch {
+            query,
+            collection,
+            num,
+            format,
+            full,
+        } => commands::query::run_vsearch(
+            &index_dir,
+            &query,
+            collection.as_deref(),
+            num,
+            &format,
+            full,
+        ),
+        Commands::Get {
+            path,
+            max_lines,
+            no_line_numbers,
+            format,
+        } => commands::get::run_get(&index_dir, &path, max_lines, no_line_numbers, &format),
+        Commands::MultiGet {
+            pattern,
+            collection,
+            max_lines,
+            format,
+        } => commands::get::run_multi_get(
+            &index_dir,
+            &pattern,
+            collection.as_deref(),
+            max_lines,
+            &format,
+        ),
+        Commands::Ls { path } => commands::get::run_ls(&index_dir, path.as_deref()),
+        Commands::Collection(cmd) => commands::collection::run(&index_dir, cmd),
+        Commands::Context(cmd) => commands::context::run(&index_dir, cmd),
         Commands::Init => commands::index::run_init(),
         Commands::Status => commands::index::run_status(&index_dir),
         Commands::Embed { collection } => {

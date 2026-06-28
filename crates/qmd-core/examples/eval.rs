@@ -11,7 +11,10 @@ use anyhow::Result;
 use qmd_core::{Store, StoreConfig};
 use qmd_llm::{LlamaCppBackend, LlamaCppConfig};
 use serde::Deserialize;
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
@@ -135,9 +138,15 @@ fn main() -> Result<()> {
         let vec_top1 = vec_results.first().map(|r| r.path.as_str()).unwrap_or("");
         let vec_matched = result_matches(vec_top1, &case.expected_doc);
 
-        if matched { hits += 1; }
-        if fts_matched { fts_only_hits += 1; }
-        if vec_matched { vec_only_hits += 1; }
+        if matched {
+            hits += 1;
+        }
+        if fts_matched {
+            fts_only_hits += 1;
+        }
+        if vec_matched {
+            vec_only_hits += 1;
+        }
 
         let indicator = if matched { "✓" } else { "✗" };
         println!(
@@ -156,9 +165,18 @@ fn main() -> Result<()> {
     let n = cases.len();
     println!("\n{}", "=".repeat(40));
     println!("Results:");
-    println!("  Hybrid (BM25+vec+rerank): {hits}/{n} ({:.0}%)", 100.0 * hits as f64 / n as f64);
-    println!("  BM25 only:               {fts_only_hits}/{n} ({:.0}%)", 100.0 * fts_only_hits as f64 / n as f64);
-    println!("  Vector only:             {vec_only_hits}/{n} ({:.0}%)", 100.0 * vec_only_hits as f64 / n as f64);
+    println!(
+        "  Hybrid (BM25+vec+rerank): {hits}/{n} ({:.0}%)",
+        100.0 * hits as f64 / n as f64
+    );
+    println!(
+        "  BM25 only:               {fts_only_hits}/{n} ({:.0}%)",
+        100.0 * fts_only_hits as f64 / n as f64
+    );
+    println!(
+        "  Vector only:             {vec_only_hits}/{n} ({:.0}%)",
+        100.0 * vec_only_hits as f64 / n as f64
+    );
 
     if hits * 100 / n >= 40 {
         println!("\nPASS — Phase 1 parity gate met (≥40% top-1)");

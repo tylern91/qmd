@@ -8,14 +8,14 @@ use anyhow::{Context, Result};
 use rusqlite::Connection;
 use std::path::PathBuf;
 
-use sha2::{Digest, Sha256};
 use qmd_llm::InferenceBackend;
+use sha2::{Digest, Sha256};
 
 use crate::{
     chunking::chunk_document,
     db::{
-        self, content_hash, doc_for_vid, docid_from_hash, get_content,
-        open_db, upsert_content, upsert_document, upsert_vector_meta,
+        self, content_hash, doc_for_vid, docid_from_hash, get_content, open_db, upsert_content,
+        upsert_document, upsert_vector_meta,
     },
     fts::FtsIndex,
     hnsw::VectorIndex,
@@ -61,9 +61,8 @@ impl Store {
 
         // Load HNSW index from disk if it exists, otherwise start fresh.
         let hnsw = if config.hnsw_path.exists() {
-            VectorIndex::load(&config.hnsw_path).unwrap_or_else(|_| {
-                VectorIndex::new().expect("fresh usearch index")
-            })
+            VectorIndex::load(&config.hnsw_path)
+                .unwrap_or_else(|_| VectorIndex::new().expect("fresh usearch index"))
         } else {
             VectorIndex::new()?
         };
@@ -232,7 +231,10 @@ impl Store {
 
         if !initial_fts.is_empty() {
             ranked_lists.push(fts_hits_to_ranked(&initial_fts));
-            list_meta.push(RankedListMeta { source: "fts", query_type: QueryType::Original });
+            list_meta.push(RankedListMeta {
+                source: "fts",
+                query_type: QueryType::Original,
+            });
         }
 
         // Step 2: Embed original query for vector search.
@@ -241,7 +243,10 @@ impl Store {
         let vec_results = self.vec_hits_to_ranked(vec_hits, collection)?;
         if !vec_results.is_empty() {
             ranked_lists.push(vec_results);
-            list_meta.push(RankedListMeta { source: "vec", query_type: QueryType::Original });
+            list_meta.push(RankedListMeta {
+                source: "vec",
+                query_type: QueryType::Original,
+            });
         }
 
         // Step 3: Query expansion (skipped on strong BM25 signal).
@@ -316,14 +321,22 @@ impl Store {
             });
         }
 
-        final_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        final_results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         final_results.truncate(limit);
         Ok(final_results)
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    fn hits_to_results(&self, hits: Vec<(String, i64, f32)>, limit: usize) -> Result<Vec<SearchResult>> {
+    fn hits_to_results(
+        &self,
+        hits: Vec<(String, i64, f32)>,
+        limit: usize,
+    ) -> Result<Vec<SearchResult>> {
         let mut results = Vec::new();
         for (filepath, doc_id, score) in hits.into_iter().take(limit) {
             let doc = match db::get_document_by_id(&self.db, doc_id)? {
@@ -373,7 +386,10 @@ impl Store {
         Ok(results)
     }
 
-    fn filepath_to_doc_body(&self, filepath: &str) -> Result<Option<(crate::types::Document, String)>> {
+    fn filepath_to_doc_body(
+        &self,
+        filepath: &str,
+    ) -> Result<Option<(crate::types::Document, String)>> {
         let (collection, path) = split_filepath(filepath);
         let doc = match db::get_document_by_filepath(&self.db, collection, path)? {
             Some(d) => d,
@@ -398,9 +414,7 @@ fn fts_hits_to_ranked(hits: &[(String, i64, f32)]) -> Vec<RankedResult> {
 
 /// Split "collection/path/to/file.md" into ("collection", "path/to/file.md").
 fn split_filepath(filepath: &str) -> (&str, &str) {
-    filepath
-        .split_once('/')
-        .unwrap_or((filepath, ""))
+    filepath.split_once('/').unwrap_or((filepath, ""))
 }
 
 /// Pick the chunk with the most query-term overlap. Returns the text.
@@ -416,7 +430,10 @@ fn best_chunk_text(body: &str, query_terms: &[String]) -> Option<String> {
         .into_iter()
         .max_by_key(|c| {
             let lower = c.text.to_lowercase();
-            query_terms.iter().filter(|t| lower.contains(t.as_str())).count()
+            query_terms
+                .iter()
+                .filter(|t| lower.contains(t.as_str()))
+                .count()
         })
         .map(|c| c.text)
 }
@@ -430,10 +447,16 @@ fn best_chunk_with_pos(body: &str, query_terms: &[String]) -> (String, usize) {
         let c = chunks.into_iter().next().unwrap();
         return (c.text, c.pos);
     }
-    let best = chunks.into_iter().max_by_key(|c| {
-        let lower = c.text.to_lowercase();
-        query_terms.iter().filter(|t| lower.contains(t.as_str())).count()
-    }).unwrap();
+    let best = chunks
+        .into_iter()
+        .max_by_key(|c| {
+            let lower = c.text.to_lowercase();
+            query_terms
+                .iter()
+                .filter(|t| lower.contains(t.as_str()))
+                .count()
+        })
+        .unwrap();
     (best.text, best.pos)
 }
 

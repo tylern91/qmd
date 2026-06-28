@@ -65,7 +65,12 @@ pub trait InferenceBackend: Send {
     fn rerank(&mut self, query: &str, docs: &[&str]) -> Result<Vec<f32>>;
 
     /// Generate constrained text via GBNF grammar. Returns the generated string.
-    fn generate_constrained(&mut self, prompt: &str, grammar: &str, grammar_root: &str) -> Result<String>;
+    fn generate_constrained(
+        &mut self,
+        prompt: &str,
+        grammar: &str,
+        grammar_root: &str,
+    ) -> Result<String>;
 
     fn embed_model_name(&self) -> &str;
     fn rerank_model_name(&self) -> &str;
@@ -130,22 +135,36 @@ impl LlamaCppBackend {
         // Spawning a new Runtime inside an existing tokio context panics; detect and
         // use block_in_place (which yields the thread to the scheduler) instead.
         let (embed_path, rerank_path) = match tokio::runtime::Handle::try_current() {
-            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(async {
-                let api = Api::new().context("hf-hub API init")?;
-                let ep = api.model(config.embed_repo.clone()).get(&config.embed_file)
-                    .await.context("embed model download")?;
-                let rp = api.model(config.rerank_repo.clone()).get(&config.rerank_file)
-                    .await.context("rerank model download")?;
-                Ok::<_, anyhow::Error>((ep, rp))
-            }))?,
+            Ok(handle) => tokio::task::block_in_place(|| {
+                handle.block_on(async {
+                    let api = Api::new().context("hf-hub API init")?;
+                    let ep = api
+                        .model(config.embed_repo.clone())
+                        .get(&config.embed_file)
+                        .await
+                        .context("embed model download")?;
+                    let rp = api
+                        .model(config.rerank_repo.clone())
+                        .get(&config.rerank_file)
+                        .await
+                        .context("rerank model download")?;
+                    Ok::<_, anyhow::Error>((ep, rp))
+                })
+            })?,
             Err(_) => tokio::runtime::Runtime::new()
                 .context("tokio runtime init")?
                 .block_on(async {
                     let api = Api::new().context("hf-hub API init")?;
-                    let ep = api.model(config.embed_repo.clone()).get(&config.embed_file)
-                        .await.context("embed model download")?;
-                    let rp = api.model(config.rerank_repo.clone()).get(&config.rerank_file)
-                        .await.context("rerank model download")?;
+                    let ep = api
+                        .model(config.embed_repo.clone())
+                        .get(&config.embed_file)
+                        .await
+                        .context("embed model download")?;
+                    let rp = api
+                        .model(config.rerank_repo.clone())
+                        .get(&config.rerank_file)
+                        .await
+                        .context("rerank model download")?;
                     Ok::<_, anyhow::Error>((ep, rp))
                 })?,
         };
@@ -233,7 +252,12 @@ impl InferenceBackend for LlamaCppBackend {
         Ok(scores)
     }
 
-    fn generate_constrained(&mut self, prompt: &str, grammar: &str, grammar_root: &str) -> Result<String> {
+    fn generate_constrained(
+        &mut self,
+        prompt: &str,
+        grammar: &str,
+        grammar_root: &str,
+    ) -> Result<String> {
         let grammar_sampler = LlamaSampler::grammar(&self.rerank_model, grammar, grammar_root)
             .map_err(|e| anyhow::anyhow!("GBNF grammar error: {e:?}"))?;
         let _chain = LlamaSampler::chain_simple([
@@ -273,8 +297,12 @@ impl InferenceBackend for NoBackend {
     fn generate_constrained(&mut self, _p: &str, _g: &str, _r: &str) -> Result<String> {
         anyhow::bail!("generate_constrained called without inference backend")
     }
-    fn embed_model_name(&self) -> &str { "none" }
-    fn rerank_model_name(&self) -> &str { "none" }
+    fn embed_model_name(&self) -> &str {
+        "none"
+    }
+    fn rerank_model_name(&self) -> &str {
+        "none"
+    }
 }
 
 /// Create a boxed NoBackend (convenience for Store::open).
@@ -323,8 +351,8 @@ pub fn create_backend(kind: &BackendKind) -> Result<Box<dyn InferenceBackend>> {
     match kind {
         BackendKind::Llama => {
             eprintln!("Loading LlamaCpp backend (downloads GGUF models on first run)...");
-            let b = LlamaCppBackend::new(LlamaCppConfig::default())
-                .context("LlamaCpp backend init")?;
+            let b =
+                LlamaCppBackend::new(LlamaCppConfig::default()).context("LlamaCpp backend init")?;
             eprintln!("LlamaCpp backend ready.");
             Ok(Box::new(b))
         }
@@ -337,8 +365,11 @@ pub fn create_backend(kind: &BackendKind) -> Result<Box<dyn InferenceBackend>> {
                 .and_then(|s| OrtEp::from_str(&s))
                 .unwrap_or(OrtEp::Auto);
             eprintln!("Loading ORT backend (ep={ep:?}, downloads ONNX model on first run)...");
-            let b = OrtBackend::new(OrtConfig { ep, ..OrtConfig::default() })
-                .context("ORT backend init")?;
+            let b = OrtBackend::new(OrtConfig {
+                ep,
+                ..OrtConfig::default()
+            })
+            .context("ORT backend init")?;
             let name = b.embed_model_name().to_string();
             eprintln!("ORT backend ready ({name})");
             Ok(Box::new(b))

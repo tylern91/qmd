@@ -1,5 +1,5 @@
 use anyhow::Result;
-use qmd_llm::{BackendKind, create_backend};
+use qmd_llm::{create_backend, BackendKind};
 use std::path::Path;
 use std::time::Instant;
 
@@ -21,7 +21,10 @@ const BENCH_TEXTS: &[&str] = &[
 pub fn run_bench(_index_dir: &Path, n_rounds: usize) -> Result<()> {
     let kind = BackendKind::from_env();
     eprintln!("Backend: {kind:?}");
-    eprintln!("Batch size: {} texts × {n_rounds} rounds", BENCH_TEXTS.len());
+    eprintln!(
+        "Batch size: {} texts × {n_rounds} rounds",
+        BENCH_TEXTS.len()
+    );
 
     let mut backend = create_backend(&kind)?;
 
@@ -48,9 +51,7 @@ pub fn run_bench(_index_dir: &Path, n_rounds: usize) -> Result<()> {
     println!("  Throughput:     {texts_per_sec:.1} texts/sec");
     println!("  Latency/text:   {ms_per_text:.2} ms");
     println!("─────────────────────────────────────────");
-    println!(
-        "Tip: compare backends with QMD_INFERENCE_BACKEND=ort QMD_ORT_EP=coreml qmd bench"
-    );
+    println!("Tip: compare backends with QMD_INFERENCE_BACKEND=ort QMD_ORT_EP=coreml qmd bench");
 
     Ok(())
 }

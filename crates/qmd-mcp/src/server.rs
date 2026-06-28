@@ -1,16 +1,14 @@
-use std::{path::PathBuf, sync::Arc};
 use anyhow::Context as _;
+use std::{path::PathBuf, sync::Arc};
 
 use rmcp::{
-    ServerHandler, tool, tool_handler, tool_router,
     handler::server::wrapper::Parameters,
-    model::{ServerCapabilities, ServerInfo, Implementation},
-    schemars,
-    serde,
+    model::{Implementation, ServerCapabilities, ServerInfo},
+    schemars, serde, tool, tool_handler, tool_router, ServerHandler,
 };
 
-use qmd_core::{Store, StoreConfig, db};
-use qmd_llm::{LlamaCppBackend, LlamaCppConfig, no_backend};
+use qmd_core::{db, Store, StoreConfig};
+use qmd_llm::{no_backend, LlamaCppBackend, LlamaCppConfig};
 
 // ── Server struct ─────────────────────────────────────────────────────────────
 
@@ -47,11 +45,15 @@ impl QmdServer {
             let s = Store::open(config, Box::new(backend))?;
             Ok::<_, anyhow::Error>(Arc::new(std::sync::Mutex::new(s)))
         })?;
-        store.lock().map_err(|e| anyhow::anyhow!("ml store lock poisoned: {e}"))
+        store
+            .lock()
+            .map_err(|e| anyhow::anyhow!("ml store lock poisoned: {e}"))
     }
 
     fn fts(&self) -> anyhow::Result<std::sync::MutexGuard<'_, Store>> {
-        self.fts_store.lock().map_err(|e| anyhow::anyhow!("fts store lock poisoned: {e}"))
+        self.fts_store
+            .lock()
+            .map_err(|e| anyhow::anyhow!("fts store lock poisoned: {e}"))
     }
 }
 
@@ -117,7 +119,9 @@ pub struct MultiGetInput {
 impl QmdServer {
     /// Hybrid semantic search: BM25 + vector retrieval fused with RRF and
     /// reranked by a cross-encoder. Best for most queries.
-    #[tool(description = "Hybrid search (BM25 + vector + rerank). Best for most queries. Provide a natural-language question or keyword phrase.")]
+    #[tool(
+        description = "Hybrid search (BM25 + vector + rerank). Best for most queries. Provide a natural-language question or keyword phrase."
+    )]
     fn query(&self, Parameters(p): Parameters<QueryInput>) -> String {
         let no_rerank = !p.rerank.unwrap_or(true);
         let limit = p.limit.unwrap_or(10);
@@ -132,7 +136,9 @@ impl QmdServer {
     }
 
     /// BM25 full-text keyword search. No LLM required — instant results.
-    #[tool(description = "BM25 keyword search. Fast, no model required. Supports \"quoted phrases\" and -negation. Use for known terms or exact phrases.")]
+    #[tool(
+        description = "BM25 keyword search. Fast, no model required. Supports \"quoted phrases\" and -negation. Use for known terms or exact phrases."
+    )]
     fn search(&self, Parameters(p): Parameters<SearchInput>) -> String {
         let limit = p.limit.unwrap_or(10);
         let col = p.collection.as_deref();
@@ -146,7 +152,9 @@ impl QmdServer {
     }
 
     /// Retrieve full document content by file path or docid.
-    #[tool(description = "Retrieve a document by file path or docid (#abc123) from search results. Supports line range: 'file.md:100:40' reads 40 lines from line 100.")]
+    #[tool(
+        description = "Retrieve a document by file path or docid (#abc123) from search results. Supports line range: 'file.md:100:40' reads 40 lines from line 100."
+    )]
     fn get(&self, Parameters(p): Parameters<GetInput>) -> String {
         let (lookup, from_line, max_lines) = parse_file_spec(&p.file, p.from_line, p.max_lines);
         match self.fts() {
@@ -156,16 +164,22 @@ impl QmdServer {
     }
 
     /// Retrieve multiple documents by glob pattern or comma-separated list.
-    #[tool(description = "Retrieve multiple documents matching a glob pattern (e.g. 'journals/2025-05*.md') or a comma-separated list of paths/docids.")]
+    #[tool(
+        description = "Retrieve multiple documents matching a glob pattern (e.g. 'journals/2025-05*.md') or a comma-separated list of paths/docids."
+    )]
     fn multi_get(&self, Parameters(p): Parameters<MultiGetInput>) -> String {
         match self.fts() {
-            Ok(store) => multi_get_documents(&store, &p.pattern, p.collection.as_deref(), p.max_lines),
+            Ok(store) => {
+                multi_get_documents(&store, &p.pattern, p.collection.as_deref(), p.max_lines)
+            }
             Err(e) => format!("Error opening store: {e:#}"),
         }
     }
 
     /// Show index status: collections, document counts, and storage sizes.
-    #[tool(description = "Show the QMD index status: collections, document counts, and index health.")]
+    #[tool(
+        description = "Show the QMD index status: collections, document counts, and index health."
+    )]
     fn status(&self) -> String {
         match self.fts() {
             Ok(store) => build_status(&store, &self.index_dir),
@@ -185,7 +199,7 @@ impl ServerHandler for QmdServer {
                 `search` for exact keyword search, \
                 `get` to retrieve a document by path or docid, \
                 `multi_get` to batch-retrieve documents, \
-                `status` to see index health."
+                `status` to see index health.",
             )
     }
 }
@@ -200,7 +214,12 @@ fn format_results(results: &[qmd_core::SearchResult], query: &str) -> String {
     for (i, r) in results.iter().enumerate() {
         out.push_str(&format!(
             "[{}] {} #{}\n  qmd://{}/{} · score {:.3}\n",
-            i + 1, r.title, r.docid, r.collection, r.path, r.score
+            i + 1,
+            r.title,
+            r.docid,
+            r.collection,
+            r.path,
+            r.score
         ));
         let snippet = r.best_chunk.trim();
         if !snippet.is_empty() {
@@ -223,21 +242,30 @@ fn parse_file_spec(
     let mut fl = from_line;
     let mut ml = max_lines;
 
-    if let Some(caps) = s.rsplit_once(':').and_then(|(rest, last)| {
-        last.parse::<usize>().ok().map(|n| (rest.to_string(), n))
-    }) {
+    if let Some(caps) = s
+        .rsplit_once(':')
+        .and_then(|(rest, last)| last.parse::<usize>().ok().map(|n| (rest.to_string(), n)))
+    {
         let (rest, n2) = caps;
         if let Some((pre, n1_str)) = rest.rsplit_once(':') {
             if let Ok(n1) = n1_str.parse::<usize>() {
-                if fl.is_none() { fl = Some(n1); }
-                if ml.is_none() { ml = Some(n2); }
+                if fl.is_none() {
+                    fl = Some(n1);
+                }
+                if ml.is_none() {
+                    ml = Some(n2);
+                }
                 lookup = pre.to_string();
             } else {
-                if fl.is_none() { fl = Some(n2); }
+                if fl.is_none() {
+                    fl = Some(n2);
+                }
                 lookup = rest;
             }
         } else {
-            if fl.is_none() { fl = Some(n2); }
+            if fl.is_none() {
+                fl = Some(n2);
+            }
             lookup = rest;
         }
     }
@@ -281,7 +309,10 @@ fn get_document(
         .map(|(i, l)| format!("{:>4}: {l}\n", start + i + 1))
         .collect();
 
-    format!("# {}\n── qmd://{}/{} ──\n\n{text}", doc.title, doc.collection, doc.path)
+    format!(
+        "# {}\n── qmd://{}/{} ──\n\n{text}",
+        doc.title, doc.collection, doc.path
+    )
 }
 
 fn multi_get_documents(
@@ -301,19 +332,32 @@ fn multi_get_documents(
     for doc in &docs {
         let filepath = format!("{}/{}", doc.collection, doc.path);
         let matched = patterns.iter().any(|p| {
-            if p.contains('*') { glob_match(p, &filepath) }
-            else { filepath.contains(p) || doc.path.contains(p) }
+            if p.contains('*') {
+                glob_match(p, &filepath)
+            } else {
+                filepath.contains(p) || doc.path.contains(p)
+            }
         });
-        if !matched { continue; }
+        if !matched {
+            continue;
+        }
 
         let body = db::get_content(&store.db, &doc.hash)
             .unwrap_or_default()
             .unwrap_or_default();
-        let text: String = body.lines().take(max_lines.unwrap_or(usize::MAX))
-            .collect::<Vec<_>>().join("\n");
+        let text: String = body
+            .lines()
+            .take(max_lines.unwrap_or(usize::MAX))
+            .collect::<Vec<_>>()
+            .join("\n");
 
-        if count > 0 { out.push_str("\n────────────────────────\n\n"); }
-        out.push_str(&format!("# {}\n── qmd://{filepath} ──\n\n{text}\n", doc.title));
+        if count > 0 {
+            out.push_str("\n────────────────────────\n\n");
+        }
+        out.push_str(&format!(
+            "# {}\n── qmd://{filepath} ──\n\n{text}\n",
+            doc.title
+        ));
         count += 1;
     }
 
@@ -325,10 +369,14 @@ fn multi_get_documents(
 }
 
 fn build_status(store: &Store, index_dir: &PathBuf) -> String {
-    let total_docs: i64 = store.db
-        .query_row("SELECT COUNT(*) FROM documents WHERE active=1", [], |r| r.get(0))
+    let total_docs: i64 = store
+        .db
+        .query_row("SELECT COUNT(*) FROM documents WHERE active=1", [], |r| {
+            r.get(0)
+        })
         .unwrap_or(0);
-    let total_vecs: i64 = store.db
+    let total_vecs: i64 = store
+        .db
         .query_row("SELECT COUNT(*) FROM content_vectors", [], |r| r.get(0))
         .unwrap_or(0);
 
@@ -355,11 +403,15 @@ fn build_status(store: &Store, index_dir: &PathBuf) -> String {
 
 fn glob_match(pattern: &str, target: &str) -> bool {
     let parts: Vec<&str> = pattern.split('*').collect();
-    if parts.len() == 1 { return target == pattern; }
+    if parts.len() == 1 {
+        return target == pattern;
+    }
     let mut rest = target;
     for (i, part) in parts.iter().enumerate() {
         if i == 0 {
-            if !rest.starts_with(part) { return false; }
+            if !rest.starts_with(part) {
+                return false;
+            }
             rest = &rest[part.len()..];
         } else if i == parts.len() - 1 {
             return rest.ends_with(part);

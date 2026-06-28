@@ -22,10 +22,17 @@ fn chunk_short_doc() {
 fn chunk_long_doc_produces_multiple_chunks() {
     let body = "word ".repeat(1000); // ~5000 chars > CHUNK_SIZE_CHARS
     let chunks = chunk_document(&body);
-    assert!(chunks.len() >= 2, "expected ≥2 chunks, got {}", chunks.len());
+    assert!(
+        chunks.len() >= 2,
+        "expected ≥2 chunks, got {}",
+        chunks.len()
+    );
     // Chunks should overlap
     for w in chunks.windows(2) {
-        assert!(w[0].pos < w[1].pos, "chunk positions should be strictly increasing");
+        assert!(
+            w[0].pos < w[1].pos,
+            "chunk positions should be strictly increasing"
+        );
     }
 }
 
@@ -92,8 +99,14 @@ fn rrf_top_rank_bonus_applied() {
 #[test]
 fn rrf_original_query_weight_2x() {
     let meta = vec![
-        RankedListMeta { source: "fts", query_type: QueryType::Original },
-        RankedListMeta { source: "fts", query_type: QueryType::Lex },
+        RankedListMeta {
+            source: "fts",
+            query_type: QueryType::Original,
+        },
+        RankedListMeta {
+            source: "fts",
+            query_type: QueryType::Lex,
+        },
     ];
     let weights = rrf_weights(&meta);
     assert_eq!(weights[0], 2.0);
@@ -120,7 +133,15 @@ fn db_upsert_and_retrieve() {
     let body = "Hello, this is a test document.";
     let hash = content_hash(body);
     upsert_content(&db, &hash, body, "2024-01-01").unwrap();
-    upsert_document(&db, "testcoll", "docs/hello.md", "Hello", &hash, "2024-01-01").unwrap();
+    upsert_document(
+        &db,
+        "testcoll",
+        "docs/hello.md",
+        "Hello",
+        &hash,
+        "2024-01-01",
+    )
+    .unwrap();
 
     let doc = qmd_core::db::get_document_by_filepath(&db, "testcoll", "docs/hello.md")
         .unwrap()

@@ -29,7 +29,9 @@ impl VectorIndex {
     pub fn new() -> Result<Self> {
         let opts = Self::make_opts();
         let inner = Index::new(&opts).map_err(|e| anyhow!("usearch new: {e}"))?;
-        inner.reserve(4096).map_err(|e| anyhow!("usearch reserve: {e}"))?;
+        inner
+            .reserve(4096)
+            .map_err(|e| anyhow!("usearch reserve: {e}"))?;
         Ok(Self { inner, next_vid: 0 })
     }
 
@@ -41,7 +43,10 @@ impl VectorIndex {
             .load(path.to_str().ok_or_else(|| anyhow!("invalid path"))?)
             .map_err(|e| anyhow!("usearch load: {e}"))?;
         let size = inner.size();
-        Ok(Self { inner, next_vid: size as u64 })
+        Ok(Self {
+            inner,
+            next_vid: size as u64,
+        })
     }
 
     /// Save the index to disk for persistence across restarts.

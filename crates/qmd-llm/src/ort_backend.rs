@@ -98,8 +98,14 @@ impl OrtBackend {
         let (model_path, tokenizer_path) = rt.block_on(async {
             let api = Api::new().context("hf-hub API")?;
             let repo = api.model(config.embed_repo.clone());
-            let model = repo.get(&config.embed_file).await.context("model download")?;
-            let tok = repo.get(&config.tokenizer_file).await.context("tokenizer download")?;
+            let model = repo
+                .get(&config.embed_file)
+                .await
+                .context("model download")?;
+            let tok = repo
+                .get(&config.tokenizer_file)
+                .await
+                .context("tokenizer download")?;
             Ok::<_, anyhow::Error>((model, tok))
         })?;
 
@@ -116,8 +122,16 @@ impl OrtBackend {
             .context("ORT session load")?;
 
         // Introspect model I/O to detect optional inputs/outputs
-        let input_names: Vec<String> = session.inputs().iter().map(|i| i.name().to_string()).collect();
-        let output_names: Vec<String> = session.outputs().iter().map(|o| o.name().to_string()).collect();
+        let input_names: Vec<String> = session
+            .inputs()
+            .iter()
+            .map(|i| i.name().to_string())
+            .collect();
+        let output_names: Vec<String> = session
+            .outputs()
+            .iter()
+            .map(|o| o.name().to_string())
+            .collect();
         let has_token_type_ids = input_names.iter().any(|n| n == "token_type_ids");
         let has_sentence_embedding = output_names.iter().any(|n| n == "sentence_embedding");
 
@@ -164,7 +178,11 @@ impl OrtBackend {
             .encode_batch(texts.to_vec(), true)
             .map_err(|e| anyhow::anyhow!("tokenize: {e}"))?;
 
-        let seq_len = encodings.iter().map(|e| e.get_ids().len()).max().unwrap_or(1);
+        let seq_len = encodings
+            .iter()
+            .map(|e| e.get_ids().len())
+            .max()
+            .unwrap_or(1);
 
         // Build flat input vectors
         let mut flat_ids = vec![0i64; batch * seq_len];
@@ -266,9 +284,7 @@ impl InferenceBackend for OrtBackend {
     }
 
     fn rerank(&mut self, _query: &str, _docs: &[&str]) -> Result<Vec<f32>> {
-        anyhow::bail!(
-            "OrtBackend: reranking not supported — use LlamaCppBackend for hybrid query"
-        )
+        anyhow::bail!("OrtBackend: reranking not supported — use LlamaCppBackend for hybrid query")
     }
 
     fn generate_constrained(&mut self, _p: &str, _g: &str, _r: &str) -> Result<String> {
@@ -295,7 +311,7 @@ fn l2_normalize(mut v: Vec<f32>) -> Vec<f32> {
 }
 
 fn resolve_ep(ep: OrtEp) -> ort::ep::ExecutionProviderDispatch {
-    use ort::ep::{CPU, CUDA, DirectML};
+    use ort::ep::{DirectML, CPU, CUDA};
     match ep {
         OrtEp::Cuda => CUDA::default().build(),
         OrtEp::DirectMl => DirectML::default().build(),
