@@ -1,0 +1,26 @@
+[package]
+name = "qmd-cli"
+version = "0.1.0"
+edition = "2021"
+description = "qmd CLI — hybrid local document search"
+
+[[bin]]
+name = "qmd"
+path = "src/main.rs"
+
+[features]
+default = []
+# Enable ONNX Runtime backend (CoreML/CUDA/DirectML) — passes through to qmd-llm
+ort-backend = ["qmd-llm/ort-backend"]
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+dirs = "5"
+qmd-core = { path = "../qmd-core" }
+qmd-llm = { path = "../qmd-llm" }
+qmd-mcp = { path = "../qmd-mcp" }
+serde_json = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+walkdir = "2"

@@ -1,0 +1,19 @@
+[package]
+name = "qmd-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+qmd-llm = { path = "../qmd-llm" }
+regex = "1"
+rusqlite = { version = "0.33", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = { version = "0.10", features = ["std"] }
+hex = "0.4"
+tantivy = "0.26"
+usearch = "2.25"
+
+[dev-dependencies]
+tempfile = "3"
