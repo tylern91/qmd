@@ -40,6 +40,38 @@ jobs:
       - name: Verify dev shell provides Rust toolchain
         run: nix develop --command cargo --version
 
-      # Full `nix build .` is a follow-up: llama-cpp-2 bundles a CMake-based
-      # C++ library (llama.cpp) that requires cmake 3.x and Metal frameworks on
-      # macOS. Sandbox reproducibility needs additional testing. Track in CHANGELOG.
+  build:
+    name: nix build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux (CPU-only): merge gate — must pass.
+          - os: ubuntu-latest
+            continue-on-error: false
+          # macOS (Metal via embed-library): non-blocking signal.
+          # A slow/heavy sandbox compile; failure here doesn't gate the merge.
+          - os: macos-latest
+            continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Build qmd package
+        continue-on-error: ${{ matrix.continue-on-error }}
+        run: nix build .#default -L
+
+      - name: Smoke-test the result binary
+        if: success()
+        continue-on-error: ${{ matrix.continue-on-error }}
+        run: ./result/bin/qmd --version
