@@ -44,12 +44,15 @@
           # Build only the CLI crate; default features (excludes ort-backend).
           cargoBuildFlags = [ "-p" "qmd-cli" ];
 
-          nativeBuildInputs = nativeBuildDeps;
+          # Linux: openssl-sys (via hf-hub → reqwest → native-tls) needs the
+          # OpenSSL headers (openssl.dev, found by pkg-config) and runtime lib.
+          # Darwin: default apple-sdk propagates the frameworks llama.cpp links.
+          nativeBuildInputs = nativeBuildDeps
+            ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.openssl.dev ];
 
-          # Darwin: the default `apple-sdk` in stdenv auto-propagates the
-          # Foundation/Metal/MetalKit/Accelerate frameworks that llama.cpp links.
-          # Linux: stdenv cc toolchain suffices.
-          buildInputs = [ ];
+          buildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [
+            pkgs.openssl
+          ];
 
           # Disable HuggingFace model downloads during build (and any sandbox tests).
           QMD_CI = "1";
