@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Reproducible `nix build` package restored.** qmd now installs via
+  `nix profile install .#default` and is consumable as a flake input
+  (`inputs.qmd.url = "github:tylern91/qmd"`). The Metal backend compiles in the
+  Nix sandbox via llama.cpp's embed-library path (shader source embedded; compiled
+  at runtime — no `xcrun metal` at build time). All native C/C++ sources
+  (llama.cpp, usearch, zstd, sqlite) are vendored inside their -sys crates; no
+  network access is required. `ort-backend` is excluded from the Nix package to
+  avoid the ONNX Runtime binary download.
+
 ### Changed
 
 - **Legacy TypeScript/Node/Bun engine removed.** The Rust port (Phases 0–6, fully verified) is now the sole implementation. Workspace promoted from `rust/` to the repo root; crates live under `crates/`. The `*.md` ignore rule has been replaced with a Rust-appropriate `.gitignore`. CI workflows `ci.yml` (Node matrix) and `publish.yml` (npm publish) removed; `rust.yml` updated to work from the repo root.

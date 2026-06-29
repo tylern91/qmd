@@ -11,33 +11,78 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        # Native build inputs needed to compile qmd (llama-cpp-2 uses CMake + C/C++).
-        # NOTE: Metal/Foundation/Accelerate frameworks are found automatically by the
-        # compiler toolchain on macOS outside the Nix sandbox. A full sandboxed
-        # rustPlatform.buildRustPackage derivation is a follow-up: llama-cpp-2 bundles
-        # CMake + C++ code that has complex sandbox requirements. Track in CHANGELOG.
+        # Native build inputs shared between the package and the dev shell.
+        #   bindgenHook — libclang, required by llama-cpp-sys-2's bindgen step
+        #   cmake       — builds the vendored llama.cpp + usearch C/C++ sources
+        #   pkg-config  — locates system libs for the -sys crates
         nativeBuildDeps = [
-          pkgs.rustc
-          pkgs.cargo
-          pkgs.rustfmt
-          pkgs.clippy
-          # cmake 3.x — llama.cpp CMakeLists.txt requires VERSION 3.14..3.28
+          pkgs.rustPlatform.bindgenHook
           pkgs.cmake
           pkgs.pkg-config
-        ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
-          pkgs.gcc
-        ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
-          pkgs.darwin.cctools
         ];
 
       in
       {
+        # Reproducible package build.
+        #
+        # Builds the qmd-cli binary with default features (NO ort-backend, which
+        # would download ONNX Runtime at build time). On macOS the llama.cpp Metal
+        # backend is built via the embed-library path: the shader source is embedded
+        # and compiled at *runtime*, so the sandbox never needs `xcrun metal`. All
+        # native C/C++ sources (llama.cpp, usearch, zstd, sqlite) are vendored inside
+        # their -sys crates; no submodule or network fetch is required.
+        #
+        # Usage: nix build  ·  nix run  ·  nix profile install .#default
+        packages.default = pkgs.rustPlatform.buildRustPackage {
+          pname = "qmd";
+          version = "0.1.0";
+          src = ./.;
+
+          # Vendor all crates.io deps from the lockfile — no network during build.
+          cargoLock.lockFile = ./Cargo.lock;
+
+          # Build only the CLI crate; default features (excludes ort-backend).
+          cargoBuildFlags = [ "-p" "qmd-cli" ];
+
+          nativeBuildInputs = nativeBuildDeps;
+
+          # Darwin: the default `apple-sdk` in stdenv auto-propagates the
+          # Foundation/Metal/MetalKit/Accelerate frameworks that llama.cpp links.
+          # Linux: stdenv cc toolchain suffices.
+          buildInputs = [ ];
+
+          # Disable HuggingFace model downloads during build (and any sandbox tests).
+          QMD_CI = "1";
+          # Accept llama.cpp's cmake_minimum_required(3.14...3.28) under cmake 4.x.
+          CMAKE_POLICY_VERSION_MINIMUM = "3.5";
+
+          # Tests require models / network; skip in the sandbox. Run locally with:
+          #   cargo test --workspace --lib
+          doCheck = false;
+
+          meta = {
+            description = "On-device hybrid document search (single static binary)";
+            mainProgram = "qmd";
+            license = pkgs.lib.licenses.mit;
+            platforms = pkgs.lib.platforms.unix;
+          };
+        };
+
+        apps.default = flake-utils.lib.mkApp {
+          drv = self.packages.${system}.default;
+        };
+
         # Development shell: full Rust toolchain + native deps for building qmd.
-        # On macOS, Metal/Foundation/Accelerate are automatically available via xcrun
-        # without listing them explicitly (needed for sandboxed builds only).
         # Usage: nix develop
         devShells.default = pkgs.mkShell {
-          nativeBuildInputs = nativeBuildDeps;
+          nativeBuildInputs = [
+            pkgs.rustc
+            pkgs.cargo
+            pkgs.rustfmt
+            pkgs.clippy
+          ] ++ nativeBuildDeps
+            ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.gcc ]
+            ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [ pkgs.darwin.cctools ];
 
           shellHook = ''
             echo "qmd development shell"
